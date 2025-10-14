@@ -1,15 +1,20 @@
 """
-    run_mc(model::Model, data::Matrix{Float64}; 
-           params::AbstractVector{Symbol} = Symbol[], 
-           n_threads::Int = Threads.nthreads(),
-           optimizer_factory = nothing)
+    run_mc(model_factory::Function, data::Matrix{Float64}, 
+           params::AbstractVector{String},
+           optimizer;
+           clusters::Vector{Int} = ones(Int, size(data, 2)),
+           kwargs...)
 
-Run Monte Carlo simulations on a JuMP model using the provided dataset. The function updates the model parameters in-place for each sample in `data`, solves the model, and collects results. The simulations are parallelized across `n_threads` threads.
+Run Monte Carlo simulations using a function that creates a JuMP model. The function creates a new model for each thread, updates the model parameters for each sample in `data`, solves the model, and collects results. The simulations are parallelized across threads.
 
 # Arguments
-- `model`: A JuMP model
+- `model_factory`: A function that returns a new JuMP model. The function should accept an optimizer and additional keyword arguments
 - `data`: Matrix where each column represents a parameter set for one simulation
-- `params`: Vector of variable names (as symbols) corresponding to the uncertain parameters in the model (must match the number of rows in `data`)
+- `params`: Vector of variable names corresponding to the uncertain parameters in the model (must match the number of rows in `data`)
+- `optimizer`: The optimizer to use (can be a type like `Gurobi.Optimizer` or a function)
+- `clusters`: (Optional) A vector indicating the cluster assignment for each sample in `data`
+- `kwargs...`: Additional keyword arguments that will be passed to `model_factory`
+
 
 # Returns
 - `results`: A vector of dictionaries, each containing:
@@ -36,10 +41,11 @@ data = QuasiMonteCarlo.sample(100, 2, SobolSample())
 results = run_mc(model, data, params=["x", "y"])
 ```
 """
-function run_mc(model::Model, data::Matrix{Float64}, 
-                params::AbstractVector{String};
-                clusters::Vector{Int} = ones(Int, size(data, 2)))
-    
+function run_mc(model_factory::Function, data::Matrix{Float64}, 
+                params::AbstractVector{String},
+                optimizer;
+                clusters::Vector{Int} = ones(Int, size(data, 2)),
+                kwargs...)
     # Validate inputs
     if length(params) != size(data, 1)
         error("Number of parameters ($(length(params))) does not match the number of rows in data ($(size(data, 1))).")
@@ -56,7 +62,7 @@ function run_mc(model::Model, data::Matrix{Float64},
     thread_results = [Vector{Dict{Symbol, Any}}() for _ in 1:n_threads]
     
     # Create base models for each thread
-    thread_models = [copy(model) for _ in 1:n_threads]
+    thread_models = [model_factory(optimizer; kwargs...) for _ in 1:n_threads]
     
     # Run simulations in parallel
     Threads.@threads for cluster in 1:n_threads
@@ -65,7 +71,7 @@ function run_mc(model::Model, data::Matrix{Float64},
         
         # Get the model and results for this thread
         thread_model = thread_models[cluster]
-        cluster_results = thread_results[cluster]
+        cluster_results = Dict{Symbol, Any}[]
         
         # Process each sample in this cluster
         for idx in cluster_indices
@@ -73,16 +79,13 @@ function run_mc(model::Model, data::Matrix{Float64},
             for (param_idx, param_name) in enumerate(params)
                 set_objective_coefficient(thread_model, 
                                           variable_by_name(thread_model, param_name), 
-                                          ordered_data[param_idx, idx])
+                                          data[param_idx, idx])
             end
             
             # Solve the model and store results
             time_start = time()
             optimize!(thread_model)
             solve_time = time() - time_start
-            
-            # Check solution status
-            assert_is_solved_and_feasible(model)
             
             # Store results in thread-local array
             push!(cluster_results, Dict{Symbol, Any}(
@@ -92,18 +95,16 @@ function run_mc(model::Model, data::Matrix{Float64},
                 :solution => value.(all_variables(thread_model)),
                 :solve_time => solve_time
             ))
+
+            thread_results[cluster] = cluster_results
         end
     end
     
     # Combine results from all threads
     results = Vector{Dict{Symbol, Any}}(undef, n_samples)
-    for cluster_results in thread_results
-        for result in cluster_results
-            results[result[:index]] = result
-        end
-        # Remove the :index field from the final results
-        for result in values(results)
-            delete!(result, :index)
+    for thread_result in thread_results
+        for cluster_result in thread_result
+            results[cluster_result[:index]] = cluster_result
         end
     end
     
