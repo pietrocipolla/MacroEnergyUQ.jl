@@ -24,9 +24,12 @@ function process_mc_data(data::Matrix{Float64}, n_threads::Int, params::Vector{F
     if n_threads < 1
         throw(ArgumentError("Number of threads must be at least 1"))
     end
+
+    if n_threads > size(data, 2)
+        throw(ArgumentError("Number of threads ($n_threads) is greater than number of points ($(size(data, 2)))."))
+    end
     
-    # Number of rows in the data matrix
-    n_rows = size(data, 1)
+    # Number of columns (data points) in the data matrix
     n_cols = size(data, 2)
     
     # Transform data to [0,1]^d space using Wasserstein rankings
@@ -34,17 +37,40 @@ function process_mc_data(data::Matrix{Float64}, n_threads::Int, params::Vector{F
 
     # Generate the clusters for parallelization
     if n_threads == 1
-        cluster_assignments = ones(Int, n_cols)
+        clusters = ones(Int, n_cols)
     else
-        cluster_assignments = _generate_cluster(data_quantiles, n_threads)
+        clusters = _generate_cluster(data_quantiles, n_threads)
     end
 
     # Reorder points within each cluster
-    data = _reorder_within_clusters(data, data_quantiles, params_quantiles)
+    data, original_indices = _reorder_within_clusters(data, data_quantiles, clusters, params_quantiles)
 
-    return data, cluster_assignments
+    return data, clusters, original_indices
 end
 
+"""
+    _multivariate_quantiles(data::Matrix{Float64}, params::Vector{Float64})
+
+Private function that transforms data points to uniform quantiles in [0,1]^d space using Optimal Transport.
+The transformation preserves the multivariate structure of the data while ensuring uniform marginals.
+
+The function:
+1. Combines the input data and params into a single matrix
+2. Generates a uniform grid using Sobol sequences as the target distribution
+3. Computes the optimal transport plan between the empirical data distribution and the uniform grid
+4. Uses the transport plan to map each point (including params) to its corresponding quantile position
+
+Arguments:
+- `data`: Matrix where each column represents a point in the original space
+- `params`: Vector representing a reference point in the original space
+
+Returns:
+- Tuple containing:
+  1. Matrix of transformed data points in [0,1]^d space
+  2. Vector of transformed params in [0,1]^d space
+
+Note: The transformation is based on the Earth Mover's Distance (EMD) optimal transport solution
+"""
 function _multivariate_quantiles(data::Matrix{Float64}, params::Vector{Float64})
     # Join data and params
     data = hcat(data, params)
@@ -116,7 +142,7 @@ function _generate_cluster(data::Matrix{Float64}, n_threads::Int)
     # Find the cluster assignment for each point (index of maximum value in each row)
     cluster_assignments = [argmax(ot_plan[i,:]) for i in 1:n_cols]
 
-    return cluster_assignments'
+    return cluster_assignments
 end
 
 """
@@ -144,7 +170,7 @@ function _reorder_within_clusters(data::Matrix{Float64},
     n_cols = size(data, 2)
     
     # Initialize output arrays
-    reordered_data = copy(data)
+    reordered_data = zeros(size(data))
     reordered_indices = collect(1:n_cols)
     
     # Process each cluster
