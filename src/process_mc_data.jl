@@ -1,24 +1,24 @@
 """
-    process_mc_data(data::Matrix{Float64}, n_threads::Int, params::Vector{Float64})
+    process_mc_data(data::Matrix{Float64}, n_threads::Int, starting_point::Vector{Float64})
 
-Prepare a matrix of input samples for model run. It splits the data into `n_threads` chunks and reorder each chunk from the closest to the farthest from the center of the parameter space defined by `params`.
+Prepare a matrix of input samples for model run. It splits the data into `n_threads` chunks and reorder each chunk from the closest to the farthest from the center of the parameter space defined by `starting_point`.
 
 Arguments:
 - `data`: Data matrix.
 - `n_threads`: Number of parallel threads to use
-- `params`: Parameter vector that defines the starting point for the reordering algorithm (must have the same length as the number of columns in data)
+- `starting_point`: Parameter vector that defines the starting point for the reordering algorithm (must have the same length as the number of columns in data)
 
 Throws ArgumentError if:
-- number of columns in data doesn't match the length of params
+- number of columns in data doesn't match the length of starting_point
 - n_threads is less than 1
 
 Returns:
 - A matrix with same values of `data` but with reordered rows, and an additional column that represents the cluster for parallelization.
 """
-function process_mc_data(data::Matrix{Float64}, n_threads::Int, params::Vector{Float64})
+function process_mc_data(data::Matrix{Float64}, n_threads::Int, starting_point::Vector{Float64} = fill(0.5, size(data, 1)))
     # Check the sizes
-    if size(data, 1) != length(params)
-        throw(ArgumentError("Number of columns in the matrix ($(size(data, 1))) must match the length of the parameter vector ($(length(params)))"))
+    if size(data, 1) != length(starting_point)
+        throw(ArgumentError("Number of columns in the matrix ($(size(data, 1))) must match the length of the parameter vector ($(length(starting_point)))"))
     end
     
     if n_threads < 1
@@ -33,7 +33,7 @@ function process_mc_data(data::Matrix{Float64}, n_threads::Int, params::Vector{F
     n_cols = size(data, 2)
     
     # Transform data to [0,1]^d space using Wasserstein rankings
-    data_quantiles, params_quantiles = _multivariate_quantiles(data, params)
+    data_quantiles, starting_point_quantiles = _multivariate_quantiles(data, starting_point)
 
     # Generate the clusters for parallelization
     if n_threads == 1
@@ -43,37 +43,37 @@ function process_mc_data(data::Matrix{Float64}, n_threads::Int, params::Vector{F
     end
 
     # Reorder points within each cluster
-    data, original_indices = _reorder_within_clusters(data, data_quantiles, clusters, params_quantiles)
+    data, original_indices = _reorder_within_clusters(data, data_quantiles, clusters, starting_point_quantiles)
 
     return data, clusters, original_indices
 end
 
 """
-    _multivariate_quantiles(data::Matrix{Float64}, params::Vector{Float64})
+    _multivariate_quantiles(data::Matrix{Float64}, starting_point::Vector{Float64})
 
 Private function that transforms data points to uniform quantiles in [0,1]^d space using Optimal Transport.
 The transformation preserves the multivariate structure of the data while ensuring uniform marginals.
 
 The function:
-1. Combines the input data and params into a single matrix
+1. Combines the input data and starting_point into a single matrix
 2. Generates a uniform grid using Sobol sequences as the target distribution
 3. Computes the optimal transport plan between the empirical data distribution and the uniform grid
-4. Uses the transport plan to map each point (including params) to its corresponding quantile position
+4. Uses the transport plan to map each point (including starting_point) to its corresponding quantile position
 
 Arguments:
 - `data`: Matrix where each column represents a point in the original space
-- `params`: Vector representing a reference point in the original space
+- `starting_point`: Vector representing a reference point in the original space
 
 Returns:
 - Tuple containing:
   1. Matrix of transformed data points in [0,1]^d space
-  2. Vector of transformed params in [0,1]^d space
+  2. Vector of transformed starting_point in [0,1]^d space
 
 Note: The transformation is based on the Earth Mover's Distance (EMD) optimal transport solution
 """
-function _multivariate_quantiles(data::Matrix{Float64}, params::Vector{Float64})
-    # Join data and params
-    data = hcat(data, params)
+function _multivariate_quantiles(data::Matrix{Float64}, starting_point::Vector{Float64})
+    # Join data and starting_point
+    data = hcat(data, starting_point)
 
     n = size(data, 2)
     d = size(data, 1)
@@ -93,9 +93,9 @@ function _multivariate_quantiles(data::Matrix{Float64}, params::Vector{Float64})
     
     # Compute the quantiles for each dimension
     quantile_points = grid[:, ranking[1:(end-1)]]
-    params_quantiles = grid[:, ranking[end]]
+    starting_point_quantiles = grid[:, ranking[end]]
     
-    return quantile_points, params_quantiles    
+    return quantile_points, starting_point_quantiles    
 end
 
 """
@@ -146,16 +146,16 @@ function _generate_cluster(data::Matrix{Float64}, n_threads::Int)
 end
 
 """
-    _reorder_within_clusters(data::Matrix{Float64}, data_quantiles::Matrix{Float64}, clusters::Vector{Int}, params_quantile::Vector{Float64})
+    _reorder_within_clusters(data::Matrix{Float64}, data_quantiles::Matrix{Float64}, clusters::Vector{Int}, starting_point_quantile::Vector{Float64})
 
 Private function that reorders points within each cluster using a nearest-neighbor approach.
-Starting from the point closest to params_quantile, it builds a path by always moving to the nearest unvisited point.
+Starting from the point closest to starting_point_quantile, it builds a path by always moving to the nearest unvisited point.
 
 Arguments:
 - `data`: Matrix of original input data
 - `data_quantiles`: Matrix with the multivariate quantiles
 - `clusters`: Vector of cluster assignments for each point
-- `params_quantile`: Reference point in quantile space for starting the path
+- `starting_point_quantile`: Reference point in quantile space for starting the path
 
 Returns:
 - Tuple containing:
@@ -165,7 +165,7 @@ Returns:
 function _reorder_within_clusters(data::Matrix{Float64}, 
                                 data_quantiles::Matrix{Float64}, 
                                 clusters::Vector{Int},
-                                params_quantile::Vector{Float64})
+                                starting_point_quantile::Vector{Float64})
     n_clusters = maximum(clusters)
     n_cols = size(data, 2)
     
@@ -185,9 +185,9 @@ function _reorder_within_clusters(data::Matrix{Float64},
             # Array to store the new order of points
             new_order = Vector{Int}(undef, n_points)
             
-            # Find the point closest to params_quantile
-            distances_to_params = [sum((cluster_points[:, i] .- params_quantile).^2) for i in 1:n_points]
-            current_idx = argmin(distances_to_params)
+            # Find the point closest to starting_point_quantile
+            distances_to_starting_point = [sum((cluster_points[:, i] .- starting_point_quantile).^2) for i in 1:n_points]
+            current_idx = argmin(distances_to_starting_point)
             new_order[1] = current_idx
             
             # Build path using nearest neighbor
