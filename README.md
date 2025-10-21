@@ -21,7 +21,7 @@ Pkg.add(url="https://github.com/pietrocipolla/MacroEnergyUQ.jl")
 ```julia
 using MacroEnergyUQ
 using JuMP
-using Gurobi
+using HiGHS
 using QuasiMonteCarlo
 
 # Define a function that creates your model
@@ -40,7 +40,7 @@ n_params = 2
 data = QuasiMonteCarlo.sample(n_samples, n_params, SobolSample())
 
 # Run Monte Carlo simulations
-results = run_mc(create_model, data, ["x", "y"], Gurobi.Optimizer;
+results = run_mc(create_model, data, ["x", "y"], HiGHS.Optimizer;
                 demand = 2.0, min_production = 0.1)
 ```
 
@@ -51,15 +51,8 @@ results = run_mc(create_model, data, ["x", "y"], Gurobi.Optimizer;
 ```julia
 using Distributions
 
-# Define your distributions
-distributions = [
-    Normal(100, 10),  # First variable
-    LogNormal(4, 0.3) # Second variable
-]
-
-# Transform data using multivariate quantile transformation
-processed_data, clusters = process_mc_data(data, distributions;
-                                         n_clusters = 4)
+data = cat(rand(Normal(100, 10), 100)', rand(LogNormal(4, 0.3), 100)', dims=1) 
+data, clusters, original_indices = MacroEnergyUQ.process_mc_data(data, 4)
 ```
 
 ### Custom Parallelization

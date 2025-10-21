@@ -17,11 +17,10 @@ Run Monte Carlo simulations using a function that creates a JuMP model. The func
 
 
 # Returns
-- `results`: A vector of dictionaries, each containing:
-  - `:status`: Optimization status
-  - `:objective`: Objective value (if solved)
-  - `:solution`: Solution values (if solved)
-  - `:solve_time`: Time taken to solve the model
+A NamedTuple containing:
+- `status`: Vector of optimization status for each simulation
+- `solve_time`: Vector of solve times for each simulation
+- `outputs`: Matrix where each row corresponds to a solution vector
 
 # Example
 ```julia
@@ -39,6 +38,9 @@ data = QuasiMonteCarlo.sample(100, 2, SobolSample())
 
 # Run Monte Carlo simulations
 results = run_mc(model, data, params=["x", "y"])
+status = results.status      # Vector of solver status
+times = results.solve_time   # Vector of computation times
+Y = results.outputs         # Matrix of solutions
 ```
 """
 function run_mc(model_factory::Function, data::Matrix{Float64}, 
@@ -100,13 +102,23 @@ function run_mc(model_factory::Function, data::Matrix{Float64},
         end
     end
     
+    # Initialize arrays for results
+    status = Vector{Any}(undef, n_samples)
+    solve_time = Vector{Float64}(undef, n_samples)
+    
+    # Get the size of the solution vector from the first result
+    first_solution = thread_results[1][1][:solution]
+    outputs = Matrix{Float64}(undef, n_samples, length(first_solution))
+    
     # Combine results from all threads
-    results = Vector{Dict{Symbol, Any}}(undef, n_samples)
     for thread_result in thread_results
         for cluster_result in thread_result
-            results[cluster_result[:index]] = cluster_result
+            idx = cluster_result[:index]
+            status[idx] = cluster_result[:status]
+            solve_time[idx] = cluster_result[:solve_time]
+            outputs[idx, :] = cluster_result[:solution]
         end
     end
     
-    return results
+    return (status = status, solve_time = solve_time, outputs = outputs)
 end

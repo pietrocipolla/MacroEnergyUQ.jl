@@ -5,9 +5,11 @@ using Distances
 using QuasiMonteCarlo
 using PythonOT
 using JuMP
+using RCall
 
 include("process_mc_data.jl")
 include("run_mc.jl")
+include("ot_indices.jl")
 
 export process_mc_data, run_mc
 
