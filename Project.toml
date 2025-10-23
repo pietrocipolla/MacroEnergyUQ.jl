@@ -4,19 +4,29 @@ authors = ["pietrocipolla <leonardo.chiani@polimi.it>"]
 version = "0.1.0"
 
 [deps]
+CondaPkg = "992eb4ea-22a4-4c89-a5bb-47a3300528ab"
 Distances = "b4f34e82-e78d-54a5-968a-f98e89d6e8f7"
 JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
+Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 PythonOT = "3c485715-4278-42b2-9b5f-8f00e43c12ef"
 QuasiMonteCarlo = "8a4e6c94-4038-4cdc-81c3-7e6ffdb2a71b"
+RCall = "6f49c342-dc21-5d91-9882-a32aef131414"
+UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 
 [compat]
+CondaPkg = "0.2"
 Distances = "0.10.12"
 JuMP = "1.29.1"
+Libdl = "1.11.0"
 LinearAlgebra = "1.11.0"
+Preferences = "1.3"
 PythonOT = "0.1.6"
 QuasiMonteCarlo = "0.3.3"
+RCall = "0.13.13"
 Test = "1.11.0"
+UUIDs = "1.11.0"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
