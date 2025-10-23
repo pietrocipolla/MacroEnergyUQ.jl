@@ -1,18 +1,46 @@
 """
     run_mc(model_factory::Function, data::Matrix{Float64}, 
-           params::AbstractVector{String},
-           optimizer;
+           params::AbstractVector{String}, optimizer;
            clusters::Vector{Int} = ones(Int, size(data, 2)),
+           extract::Function = m -> value.(all_variables(m)),
            kwargs...)
 
-Run Monte Carlo simulations using a function that creates a JuMP model. The function creates a new model for each thread, updates the model parameters for each sample in `data`, solves the model, and collects results. The simulations are parallelized across threads.
+Run parallel Monte Carlo simulations using a JuMP model factory.
+
+`run_mc` creates a new JuMP model for each thread (or cluster), updates
+the model parameters for each Monte Carlo sample, solves the model, and
+collects user-specified outputs. Simulations are parallelized across threads.
 
 # Arguments
-- `model_factory`: A function that returns a new JuMP model. The function should accept an optimizer and additional keyword arguments
-- `data`: Matrix where each column represents a parameter set for one simulation
-- `params`: Vector of variable names corresponding to the uncertain parameters in the model (must match the number of rows in `data`)
-- `optimizer`: The optimizer to use (can be a type like `Gurobi.Optimizer` or a function)
-- `clusters`: (Optional) A vector indicating the cluster assignment for each sample in `data`
+- `model_factory`: A function that returns a new JuMP model.
+  The function should accept an optimizer and additional keyword arguments.
+
+- `data`: A matrix where each **column** represents a sample of uncertain
+  parameters, and each **row** corresponds to a parameter in `params`.
+
+- `params`: Vector of variable names (as `String`s) corresponding to the uncertain
+  parameters in the model. Must match the number of rows in `data`.
+
+- `optimizer`: The optimizer to use (e.g., `Gurobi.Optimizer`, `Ipopt.Optimizer`).
+
+- `clusters`: (Optional) A vector of integers indicating the cluster assignment
+  for each sample in `data`. Samples assigned to the same cluster are solved
+  sequentially on the same thread. Defaults to all ones (single cluster).
+
+- `extract`: A function that extracts outputs from the solved model.
+  It should accept a JuMP model and return a vector (or any indexable object)
+  of numerical results.
+  
+  By default, `extract = m -> value.(all_variables(m))` (returns all variable values).
+
+  Example custom extractor:
+  ```julia
+  extract = m -> [
+      value(m[:x]),                   # single variable
+      value(m[:y]),                   # another variable
+      value(0.1*m[:x] + 0.6*m[:y])   # custom expression
+  ]
+
 - `kwargs...`: Additional keyword arguments that will be passed to `model_factory`
 
 
@@ -47,6 +75,7 @@ function run_mc(model_factory::Function, data::Matrix{Float64},
                 params::AbstractVector{String},
                 optimizer;
                 clusters::Vector{Int} = ones(Int, size(data, 2)),
+                extract::Function = m -> value.(all_variables(m)),
                 kwargs...)
     # Validate inputs
     if length(params) != size(data, 1)
@@ -88,13 +117,15 @@ function run_mc(model_factory::Function, data::Matrix{Float64},
             time_start = time()
             optimize!(thread_model)
             solve_time = time() - time_start
+
+            out = extract(thread_model)
             
             # Store results in thread-local array
             push!(cluster_results, Dict{Symbol, Any}(
                 :index => idx,
                 :status => termination_status(thread_model),
                 :objective => objective_value(thread_model),
-                :solution => value.(all_variables(thread_model)),
+                :solution => out,
                 :solve_time => solve_time
             ))
 
