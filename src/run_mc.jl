@@ -1,6 +1,7 @@
 """
     run_mc(model_factory::Function, data::Matrix{Float64}, 
            params::AbstractVector{String}, optimizer;
+           params_type::Symbol = :objective,
            clusters::Vector{Int} = ones(Int, size(data, 2)),
            extract::Function = m -> value.(all_variables(m)),
            kwargs...)
@@ -22,6 +23,12 @@ collects user-specified outputs. Simulations are parallelized across threads.
   parameters in the model. Must match the number of rows in `data`.
 
 - `optimizer`: The optimizer to use (e.g., `Gurobi.Optimizer`, `Ipopt.Optimizer`).
+
+- `params_type`: A symbol representing how to find the parameters in the model. If
+  `params_type == :objective`, the strings in `params` are assumed to be the name of the
+  variable corresponding to the uncertain coefficient, and `set_objective_coefficient` is used.
+  If `params_type == :parameter`, the strings in `params` are assumed to be the name of the
+  uncertain parameters themselves, and `set_parameter_value` is used.
 
 - `clusters`: (Optional) A vector of integers indicating the cluster assignment
   for each sample in `data`. Samples assigned to the same cluster are solved
@@ -74,6 +81,7 @@ Y = results.outputs         # Matrix of solutions
 function run_mc(model_factory::Function, data::Matrix{Float64}, 
                 params::AbstractVector{String},
                 optimizer;
+                params_type::Symbol = :objective,
                 clusters::Vector{Int} = ones(Int, size(data, 2)),
                 extract::Function = m -> value.(all_variables(m)),
                 kwargs...)
@@ -84,6 +92,10 @@ function run_mc(model_factory::Function, data::Matrix{Float64},
 
     if length(clusters) != size(data, 2)
         error("Length of clusters ($(length(clusters))) must match the number of samples in data ($(size(data, 2))).")
+    end
+
+    if params_type != :objective && params_type != :parameter
+      throw(ArgumentError("Unsupported reference to parameters: $params_type. Currently, only :objective and :parameter are supported."))
     end
     
     n_samples = size(data, 2)
@@ -108,9 +120,14 @@ function run_mc(model_factory::Function, data::Matrix{Float64},
         for idx in cluster_indices
             # Update parameters
             for (param_idx, param_name) in enumerate(params)
+              if params_type == :objective
                 set_objective_coefficient(thread_model, 
                                           variable_by_name(thread_model, param_name), 
                                           data[param_idx, idx])
+              else
+                set_parameter_value(variable_by_name(thread_model, param_name), 
+                                    data[param_idx, idx])
+              end
             end
             
             # Solve the model and store results

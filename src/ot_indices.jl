@@ -114,17 +114,12 @@ A dictionary containing:
 - Confidence intervals (if bootstrapping is enabled)
 """
 function ot_indices_wb(x::Matrix, y::Matrix, M::Int; 
-                    cost::String="L2",
-                    discrete_out::Bool=false,
-                    solver::String="sinkhorn",
-                    solver_optns=nothing,
-                    scaling::Bool=true,
-                    boot::Bool=false,
-                    R=nothing,
-                    parallel::String="no",
-                    ncpus::Int=1,
-                    conf::Float64=0.95,
-                    type::String="norm")
+                       boot::Bool=false,
+                       R=nothing,
+                       parallel::String="no",
+                       ncpus::Int=1,
+                       conf::Float64=0.95,
+                       type::String="norm")
     
     # Convert Julia arrays to R objects
     @rput x
@@ -143,12 +138,76 @@ function ot_indices_wb(x::Matrix, y::Matrix, M::Int;
     
     # Compute target sensitivity indices using optimal transport
     result <- gsaot::ot_indices_wb(x = x, y = y, M = M, 
-                               boot = boot,
-                               R = R,
-                               parallel = parallel,
-                               ncpus = ncpus,
-                               conf = conf,
-                               type = type)
+                                   boot = boot,
+                                   R = R,
+                                   parallel = parallel,
+                                   ncpus = ncpus,
+                                   conf = conf,
+                                   type = type)
+    """
+
+    # Get results back to Julia
+    @rget result
+
+    return result
+end
+
+"""
+    ot_indices_1d(x::Matrix, y::Array, M::Int; kwargs...)
+
+Wrapper around the R package gsaot to compute Optimal Transport sensitivity indices for univariate outputs.
+
+# Arguments
+- `x`: Input matrix where each row is an observation and each column is a variable. Values can be numeric, strings, or categorical.
+       For continuous inputs (Float64), data is partitioned into M sets. For discrete inputs, partitioning is data-driven.
+- `y`: Output array where each row is an observation and each column is an output variable. Must be numeric.
+- `M`: Number of partitions for continuous inputs.
+- `boot`: Whether to perform bootstrapping of OT indices. Default is false.
+- `R`: Number of bootstrap replicas. Default is nothing (no bootstrapping).
+- `parallel`: Type of parallel operation for bootstrapping. Options: "no" (default), "multicore", "snow".
+- `ncpus`: Number of CPUs for parallel operation. Default is 1.
+- `conf`: Confidence level for bootstrap confidence intervals (0-1). Default is 0.95.
+- `type`: Method for computing confidence intervals. Default is "norm".
+         Other options: "basic", "stud", "perc", "bca".
+
+# Returns
+A dictionary containing:
+- Target sensitivity indices
+- Confidence intervals (if bootstrapping is enabled)
+"""
+function ot_indices_1d(x::Matrix, y::Array, M::Int;
+                       p::Float64 = 2, 
+                       boot::Bool=false,
+                       R=nothing,
+                       parallel::String="no",
+                       ncpus::Int=1,
+                       conf::Float64=0.95,
+                       type::String="norm")
+    
+    # Convert Julia arrays to R objects
+    @rput x
+    @rput y
+    @rput M
+    @rput p
+    @rput boot
+    @rput R
+    @rput parallel
+    @rput ncpus
+    @rput conf
+    @rput type
+
+    R"""
+    # Ensure X is a matrix
+    x <- as.data.frame(t(x))
+    
+    # Compute target sensitivity indices using optimal transport
+    result <- gsaot::ot_indices_1d(x = x, y = y, M = M, p = p,
+                                   boot = boot,
+                                   R = R,
+                                   parallel = parallel,
+                                   ncpus = ncpus,
+                                   conf = conf,
+                                   type = type)
     """
 
     # Get results back to Julia

@@ -6,7 +6,6 @@ using QuasiMonteCarlo
 using PythonOT
 using JuMP
 using RCall
-using Plots
 
 include("process_mc_data.jl")
 include("run_mc.jl")

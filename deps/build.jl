@@ -2,6 +2,8 @@ using Libdl
 using CondaPkg
 using Preferences
 using UUIDs
+using RCall
+import Pkg
 
 const RCALL_UUID = UUID("6f49c342-dc21-5d91-9882-a32aef131414")
 
@@ -28,7 +30,7 @@ set_preferences!(RCALL_UUID, "Rhome" => target_rhome, "libR" => target_libr)
 
 # Setup the R environment for RCall
 CondaPkg.activate!(ENV)
-using RCall
+Pkg.build("RCall")
 
 # Install necessary R packages
 R"""

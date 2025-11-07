@@ -15,7 +15,7 @@ using LinearAlgebra
         params = fill(0.5, n_dims)  # reference point in the middle of the hypercube
         
         # Run the function
-        processed_data, cluster_assignments, original_indices = process_mc_data(data, n_threads, params)
+        processed_data, cluster_assignments, original_indices = process_mc_data(data, n_threads; starting_point = params)
         
         # Basic tests
         @test size(processed_data, 1) == n_dims       # Check dimensions preserved
@@ -36,7 +36,7 @@ using LinearAlgebra
         # Test with single thread
         data_small = QuasiMonteCarlo.sample(10, 2, SobolSample())
         params_small = [0.5, 0.5]
-        processed_data_single, clusters_single = process_mc_data(data_small, 1, params_small)
+        processed_data_single, clusters_single = process_mc_data(data_small, 1; starting_point = params_small)
         @test all(clusters_single .== 1)
     end
 
@@ -45,10 +45,10 @@ using LinearAlgebra
         params_error = [0.5, 0.5]  # wrong dimension
         
         # Test dimension mismatch
-        @test_throws ArgumentError process_mc_data(data_error, 2, params_error)
+        @test_throws ArgumentError process_mc_data(data_error, 2; starting_point = params_error)
         
         # Test invalid number of threads
-        @test_throws ArgumentError process_mc_data(data_error, 0, [0.5, 0.5, 0.5])
-        @test_throws ArgumentError process_mc_data(data_error, -1, [0.5, 0.5, 0.5])
+        @test_throws ArgumentError process_mc_data(data_error, 0; starting_point = [0.5, 0.5, 0.5])
+        @test_throws ArgumentError process_mc_data(data_error, -1; starting_point = [0.5, 0.5, 0.5])
     end
 end
