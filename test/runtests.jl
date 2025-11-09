@@ -5,7 +5,8 @@ using LinearAlgebra
 
 # List of test files
 test_files = [
-    "test_process_mc_data.jl"
+    "test_process_mc_data.jl",
+    "test_run_mc.jl"
 ]
 
 # Run all tests

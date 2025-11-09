@@ -6,6 +6,7 @@ version = "0.1.0"
 [deps]
 CondaPkg = "992eb4ea-22a4-4c89-a5bb-47a3300528ab"
 Distances = "b4f34e82-e78d-54a5-968a-f98e89d6e8f7"
+Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
 JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
 Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
@@ -19,10 +20,8 @@ UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 [compat]
 CondaPkg = "0.2"
 Distances = "0.10.12"
+Distributed = "1.11.0"
 JuMP = "1.29.1"
-Libdl = "1.11.0"
-LinearAlgebra = "1.11.0"
-Pkg = "1.11.0"
 Preferences = "1.3"
 PythonOT = "0.1.6"
 QuasiMonteCarlo = "0.3.3"
@@ -31,7 +30,8 @@ Test = "1.11.0"
 UUIDs = "1.11.0"
 
 [extras]
+HiGHS = "87dc4568-4c63-4d18-b0c0-bb2238e4078b"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test"]
+test = ["Test", "HiGHS"]

@@ -1,3 +1,55 @@
+function run_cluster(cluster::Int, 
+                model_factory::Function, 
+                data::Matrix{Float64}, 
+                params::AbstractVector{String},
+                optimizer;
+                params_type::Symbol = :objective,
+                clusters::Vector{Int} = ones(Int, size(data, 2)),
+                extract::Function = m -> value.(all_variables(m)),
+                kwargs...)
+
+  # Get indices for this cluster
+  cluster_indices = findall(==(cluster), clusters)
+        
+  # Get the model and results for this thread
+  model = model_factory(optimizer; kwargs...);
+  cluster_results = Dict{Symbol, Any}[]
+        
+  # Process each sample in this cluster
+  for idx in cluster_indices
+    # Update parameters
+    for (param_idx, param_name) in enumerate(params)
+      if params_type == :objective
+        set_objective_coefficient(model, 
+                                  variable_by_name(model, param_name), 
+                                  data[param_idx, idx])
+      else
+        set_parameter_value(variable_by_name(model, param_name), 
+                            data[param_idx, idx])
+      end
+    end
+            
+    # Solve the model and store results
+    time_start = time()
+    optimize!(model)
+    solve_time = time() - time_start
+
+    out = extract(model)
+
+    # Store results in thread-local array
+    push!(cluster_results, Dict{Symbol, Any}(
+          :cluster => cluster,
+          :index => idx,
+          :status => termination_status(model),
+          :objective => objective_value(model),
+          :solution => out,
+          :solve_time => solve_time
+          ))
+  end
+
+  return cluster_results
+end
+
 """
     run_mc(model_factory::Function, data::Matrix{Float64}, 
            params::AbstractVector{String}, optimizer;
@@ -84,6 +136,7 @@ function run_mc(model_factory::Function, data::Matrix{Float64},
                 params_type::Symbol = :objective,
                 clusters::Vector{Int} = ones(Int, size(data, 2)),
                 extract::Function = m -> value.(all_variables(m)),
+                distributed::Bool = false,
                 kwargs...)
     # Validate inputs
     if length(params) != size(data, 1)
@@ -99,74 +152,36 @@ function run_mc(model_factory::Function, data::Matrix{Float64},
     end
     
     n_samples = size(data, 2)
-    n_threads = maximum(clusters)
-    
-    # Prepare storage for results for each thread
-    thread_results = [Vector{Dict{Symbol, Any}}() for _ in 1:n_threads]
-    
-    # Create base models for each thread
-    thread_models = [model_factory(optimizer; kwargs...) for _ in 1:n_threads]
-    
-    # Run simulations in parallel
-    Threads.@threads for cluster in 1:n_threads
-        # Get indices for this cluster
-        cluster_indices = findall(==(cluster), clusters)
-        
-        # Get the model and results for this thread
-        thread_model = thread_models[cluster]
-        cluster_results = Dict{Symbol, Any}[]
-        
-        # Process each sample in this cluster
-        for idx in cluster_indices
-            # Update parameters
-            for (param_idx, param_name) in enumerate(params)
-              if params_type == :objective
-                set_objective_coefficient(thread_model, 
-                                          variable_by_name(thread_model, param_name), 
-                                          data[param_idx, idx])
-              else
-                set_parameter_value(variable_by_name(thread_model, param_name), 
-                                    data[param_idx, idx])
-              end
-            end
-            
-            # Solve the model and store results
-            time_start = time()
-            optimize!(thread_model)
-            solve_time = time() - time_start
+    n_processes = maximum(clusters)
 
-            out = extract(thread_model)
-            
-            # Store results in thread-local array
-            push!(cluster_results, Dict{Symbol, Any}(
-                :index => idx,
-                :status => termination_status(thread_model),
-                :objective => objective_value(thread_model),
-                :solution => out,
-                :solve_time => solve_time
-            ))
-
-            thread_results[cluster] = cluster_results
-        end
-    end
+    mc_results_raw = [Vector{Dict{Symbol, Any}}() for _ in 1:n_processes]
+    
+    # Run distributed simulations
+    mc_results_raw = pmap(cluster -> run_cluster(cluster, model_factory, data, params, optimizer;
+                                                params_type=params_type,
+                                                clusters=clusters,
+                                                extract=extract,
+                                                kwargs...), 
+                          1:n_processes; 
+                          distributed=distributed)
     
     # Initialize arrays for results
     status = Vector{Any}(undef, n_samples)
     solve_time = Vector{Float64}(undef, n_samples)
     
     # Get the size of the solution vector from the first result
-    first_solution = thread_results[1][1][:solution]
+    first_solution = mc_results_raw[1][1][:solution]
     outputs = Matrix{Float64}(undef, n_samples, length(first_solution))
     
-    # Combine results from all threads
-    for thread_result in thread_results
-        for cluster_result in thread_result
+    # Combine results from all threads, using the stored index to maintain input order
+    for mc_result_raw in mc_results_raw
+        for cluster_result in mc_result_raw
             idx = cluster_result[:index]
             status[idx] = cluster_result[:status]
             solve_time[idx] = cluster_result[:solve_time]
             outputs[idx, :] = cluster_result[:solution]
         end
     end
-    
+
     return (status = status, solve_time = solve_time, outputs = outputs)
 end
