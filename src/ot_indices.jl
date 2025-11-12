@@ -46,6 +46,13 @@ function ot_indices(x::Matrix, y::Matrix, M::Int;
                    ncpus::Int=1,
                    conf::Float64=0.95,
                    type::String="norm")
+
+    # Check gsaot package is available in R
+    R"""
+    if (!require("gsaot", quietly = TRUE)) {
+        stop("R package 'gsaot' is not installed. Please install it with: install.packages('gsaot')")
+    }
+    """
     
     # Convert Julia arrays to R objects
     @rput x
