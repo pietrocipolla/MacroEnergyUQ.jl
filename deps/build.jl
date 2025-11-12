@@ -22,15 +22,29 @@ end
 
 # Set RCall preferences
 @info "Configuring RCall preferences..."
-# Only set preferences if paths exist; don't crash if already set to a different value.
+# Force override if the user explicitly requests it OR if paths don't match current preferences
 force_override = get(ENV, "MACROENERGYUQ_FORCE_RHOME", "0") == "1"
+
 if isdir(target_rhome) && isfile(target_libr)
+    # Always try to set preferences, force if needed
+    current_rhome = try
+        load_preference(RCALL_UUID, "Rhome", nothing)
+    catch
+        nothing
+    end
+    
+    # Force override if current preference points to a different R
+    if current_rhome !== nothing && current_rhome != target_rhome
+        @info "Detected different R installation. Forcing CondaPkg R..."
+        force_override = true
+    end
+    
     try
         set_preferences!(RCALL_UUID, "Rhome" => target_rhome, "libR" => target_libr; force=force_override)
         @info "RCall preferences set to Rhome=$(target_rhome) and libR=$(target_libr)."
     catch e
         if e isa ArgumentError
-            @info "RCall preferences already set. Keeping existing values. Set MACROENERGYUQ_FORCE_RHOME=1 to override."
+            @warn "RCall preferences already set to a different value. Set MACROENERGYUQ_FORCE_RHOME=1 to override, or run: julia -e 'using Preferences, UUIDs; delete_preferences!(UUID(\"6f49c342-dc21-5d91-9882-a32aef131414\"), \"Rhome\"; force=true); delete_preferences!(UUID(\"6f49c342-dc21-5d91-9882-a32aef131414\"), \"libR\"; force=true)'"
         else
             rethrow()
         end
@@ -45,7 +59,22 @@ end
 
 # Ensure the R environment is prepared for RCall build
 CondaPkg.activate!(ENV)
-Pkg.build("RCall")
+
+# Force RCall to rebuild with the CondaPkg R
+@info "Building RCall with CondaPkg R environment..."
+try
+    Pkg.build("RCall")
+catch e
+    @warn "RCall build failed, trying again after clearing preferences..."
+    # Delete RCall preferences and try again
+    delete_preferences!(RCALL_UUID, "Rhome"; force=true)
+    delete_preferences!(RCALL_UUID, "libR"; force=true)
+    # Reset preferences with CondaPkg paths
+    if isdir(target_rhome) && isfile(target_libr)
+        set_preferences!(RCALL_UUID, "Rhome" => target_rhome, "libR" => target_libr; force=true)
+    end
+    Pkg.build("RCall")
+end
 
 # Install necessary R packages
 R"""
