@@ -2,7 +2,6 @@ using Libdl
 using CondaPkg
 using Preferences
 using UUIDs
-using RCall
 import Pkg
 
 const RCALL_UUID = UUID("6f49c342-dc21-5d91-9882-a32aef131414")
@@ -12,7 +11,10 @@ const RCALL_UUID = UUID("6f49c342-dc21-5d91-9882-a32aef131414")
 # Install R through conda
 CondaPkg.add("r")
 
-# Set up R paths
+# Activate conda environment
+CondaPkg.activate!(ENV)
+
+# Set up R paths from CondaPkg
 target_rhome = joinpath(CondaPkg.envdir(), "lib", "R")
 if Sys.iswindows()
     target_libr = joinpath(target_rhome, "bin", Sys.WORD_SIZE==64 ? "x64" : "i386", "R.dll")
@@ -20,63 +22,46 @@ else
     target_libr = joinpath(target_rhome, "lib", "libR.$(Libdl.dlext)")
 end
 
-# Set RCall preferences
-@info "Configuring RCall preferences..."
-# Force override if the user explicitly requests it OR if paths don't match current preferences
-force_override = get(ENV, "MACROENERGYUQ_FORCE_RHOME", "0") == "1"
-
-if isdir(target_rhome) && isfile(target_libr)
-    # Always try to set preferences, force if needed
-    current_rhome = try
-        load_preference(RCALL_UUID, "Rhome", nothing)
-    catch
-        nothing
-    end
-    
-    # Force override if current preference points to a different R
-    if current_rhome !== nothing && current_rhome != target_rhome
-        @info "Detected different R installation. Forcing CondaPkg R..."
-        force_override = true
-    end
-    
-    try
-        set_preferences!(RCALL_UUID, "Rhome" => target_rhome, "libR" => target_libr; force=force_override)
-        @info "RCall preferences set to Rhome=$(target_rhome) and libR=$(target_libr)."
-    catch e
-        if e isa ArgumentError
-            @warn "RCall preferences already set to a different value. Set MACROENERGYUQ_FORCE_RHOME=1 to override, or run: julia -e 'using Preferences, UUIDs; delete_preferences!(UUID(\"6f49c342-dc21-5d91-9882-a32aef131414\"), \"Rhome\"; force=true); delete_preferences!(UUID(\"6f49c342-dc21-5d91-9882-a32aef131414\"), \"libR\"; force=true)'"
-        else
-            rethrow()
-        end
-    end
-else
-    @warn "Target R not found at $(target_rhome). Skipping setting RCall preferences."
-end
-
-@info "R setup completed successfully!"
-
-@info "Installing required R packages..."
-
-# Ensure the R environment is prepared for RCall build
-CondaPkg.activate!(ENV)
-
-# Force RCall to rebuild with the CondaPkg R
-@info "Building RCall with CondaPkg R environment..."
+# Clear any existing RCall preferences that might point to system R
+@info "Clearing existing RCall preferences..."
 try
-    Pkg.build("RCall")
-catch e
-    @warn "RCall build failed, trying again after clearing preferences..."
-    # Delete RCall preferences and try again
     delete_preferences!(RCALL_UUID, "Rhome"; force=true)
     delete_preferences!(RCALL_UUID, "libR"; force=true)
-    # Reset preferences with CondaPkg paths
-    if isdir(target_rhome) && isfile(target_libr)
-        set_preferences!(RCALL_UUID, "Rhome" => target_rhome, "libR" => target_libr; force=true)
-    end
-    Pkg.build("RCall")
+    @info "Cleared existing RCall preferences"
+catch e
+    @info "No existing preferences to clear"
+end
+
+# Set RCall preferences to use CondaPkg R
+@info "Configuring RCall to use CondaPkg R..."
+if isdir(target_rhome) && isfile(target_libr)
+    set_preferences!(RCALL_UUID, "Rhome" => target_rhome, "libR" => target_libr; force=true)
+    @info "RCall preferences set to:"
+    @info "  Rhome = $(target_rhome)"
+    @info "  libR  = $(target_libr)"
+else
+    error("CondaPkg R installation not found at $(target_rhome). Please ensure CondaPkg.add(\"r\") succeeded.")
+end
+
+# Build RCall with the correct preferences
+@info "Building RCall..."
+Pkg.build("RCall")
+
+# Now it's safe to load RCall
+@info "Loading RCall..."
+using RCall
+
+# Verify RCall is using the correct R
+rcall_rhome = rcopy(R"R.home()")
+if rcall_rhome != target_rhome
+    @warn "RCall is using R from $(rcall_rhome) instead of $(target_rhome)"
+    @warn "You may need to restart Julia and rebuild: julia -e 'using Pkg; Pkg.build(\"MacroEnergyUQ\")'"
+else
+    @info "✓ RCall successfully configured to use CondaPkg R"
 end
 
 # Install necessary R packages
+@info "Installing required R packages..."
 R"""
     if (!require("gsaot")) {
         install.packages("gsaot", repos="https://cloud.r-project.org")
@@ -84,3 +69,5 @@ R"""
 """
 
 @info "R packages installed successfully!"
+
+@info "✓ MacroEnergyUQ setup completed successfully!"
