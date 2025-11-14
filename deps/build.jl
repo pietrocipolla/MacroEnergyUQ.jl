@@ -32,7 +32,7 @@ using RCall
 @info "Installing required R packages..."
 R"""
     if (!require("gsaot")) {
-        install.packages("gsaot", repos="https://cloud.r-project.org")
+        install.packages("gsaot", repos="http://cran.rstudio.com/")
     }
 """
 
