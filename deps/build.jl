@@ -22,6 +22,8 @@ catch e
     @warn "Could not set RCall preferences: $e"
 end
 
+CondaPkg.activate!(ENV)
+
 # Now it's safe to load RCall
 @info "Loading RCall..."
 using RCall
