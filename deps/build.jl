@@ -1,5 +1,3 @@
-import CondaPkg
-
 @info "Setting up R environment for MacroEnergyUQ..."
 
 using Libdl
@@ -16,7 +14,13 @@ if Sys.iswindows()
 else
     target_libr = joinpath(target_rhome, "lib", "libR.$(Libdl.dlext)")
 end
-set_preferences!(RCALL_UUID, "Rhome" => target_rhome, "libR" => target_libr)
+
+try
+    set_preferences!(RCALL_UUID, "Rhome" => target_rhome, "libR" => target_libr; force=true)
+    @info "RCall preferences set successfully"
+catch e
+    @warn "Could not set RCall preferences: $e"
+end
 
 # Now it's safe to load RCall
 @info "Loading RCall..."
