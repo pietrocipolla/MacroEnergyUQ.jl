@@ -30,11 +30,16 @@ using RCall
 
 # Install necessary R packages
 @info "Installing required R packages..."
-R"""
-    if (!require("gsaot")) {
-        install.packages("gsaot", repos="http://cran.rstudio.com/")
-    }
-"""
+
+# withenv to ensure R uses the Conda environment and the correct compiler
+CondaPkg.withenv() do
+    R"""
+        lib = .libPaths()[grepl('.CondaPkg', .libPaths(), fixed = T)]
+        if (!require("gsaot", lib.loc=lib)) {
+            install.packages("gsaot", lib = lib, repos="http://cran.rstudio.com/")
+        }
+    """
+end
 
 @info "R packages installed successfully!"
 
