@@ -16,6 +16,10 @@ using Pkg
 Pkg.add(url="https://github.com/pietrocipolla/MacroEnergyUQ.jl")
 ```
 
+### Troubleshooting RCall Installation
+
+If you encounter issues with the RCall installation (which is required for this package), you can try the CondaPkg approach described in the [RCall installation guide](https://juliainterop.github.io/RCall.jl/stable/installation/#(Experimental)-Usage-with-CondaPkg). This package uses CondaPkg to manage the R environment automatically, but in some cases manual configuration may be needed.
+
 ## Basic Usage
 
 ```julia

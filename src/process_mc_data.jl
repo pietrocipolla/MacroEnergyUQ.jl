@@ -112,9 +112,8 @@ function _multivariate_quantiles(data::Matrix{Float64}, starting_point::Vector{F
     marginal = fill(1 / n, n)
     
     # Solve the OT problem to get the transport plan
-    transport_plan = PythonOT.emd(marginal, marginal, C)
-    ranking = [argmax(transport_plan[i, :]) for i in 1:n]
-    
+    ranking = transport_ranking(marginal, C)
+
     # Compute the quantiles for each dimension
     quantile_points = grid[:, ranking[1:(end-1)]]
     starting_point_quantiles = grid[:, ranking[end]]
@@ -137,7 +136,7 @@ The function performs the following steps:
    - Source: normalized data points with uniform distribution
    - Target: centroids with uniform distribution
    - Cost: squared Euclidean distances
-4. Assigns each point to the centroid with maximum transport probability
+4. Assigns each point to the centroid assigned by the optimal transport
 
 Arguments:
 - `data`: Input data matrix where each column is a point in the parameter space
@@ -159,12 +158,10 @@ function _generate_cluster(data::Matrix{Float64}, n_threads::Int)
     centroids_marginal = fill(1 / n_threads, n_threads)
 
     # Compute the cost matrix
-    C = pairwise(SqEuclidean(), data, centroids; dims=2);
+    C = pairwise(SqEuclidean(), data, centroids; dims=2)
 
-    ot_plan = PythonOT.emd(data_marginal, centroids_marginal, C);
-
-    # Find the cluster assignment for each point (index of maximum value in each row)
-    cluster_assignments = [argmax(ot_plan[i,:]) for i in 1:n_cols]
+    # Solve OT problem using R transport package
+    cluster_assignments = transport_ot(data_marginal, centroids_marginal, C)
 
     return cluster_assignments
 end

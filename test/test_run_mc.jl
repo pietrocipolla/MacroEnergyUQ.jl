@@ -23,7 +23,6 @@ using Distributed
                 0.6 0.7 0.8 0.9 1.0]
         
         results = run_mc(simple_model, data, ["x", "y"], HiGHS.Optimizer)
-        println(results)
         
         @test length(results.status) == 5
         @test length(results.solve_time) == 5
