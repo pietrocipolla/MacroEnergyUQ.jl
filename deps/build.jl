@@ -35,6 +35,11 @@ using RCall
 CondaPkg.withenv() do
     R"""
         lib = .libPaths()[grepl('.CondaPkg', .libPaths(), fixed = T)]
+        # Don't know why but RcppEigen has to be installed before gsaot
+        if (!require("RcppEigen", lib.loc=lib)) {
+            install.packages("RcppEigen", lib = lib, repos="http://cran.rstudio.com/")
+        }
+
         if (!require("gsaot", lib.loc=lib)) {
             install.packages("gsaot", lib = lib, repos="http://cran.rstudio.com/")
         }
