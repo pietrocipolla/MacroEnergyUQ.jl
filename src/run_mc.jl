@@ -41,7 +41,6 @@ function run_cluster(cluster::Int,
           :cluster => cluster,
           :index => idx,
           :status => termination_status(model),
-          :objective => objective_value(model),
           :solution => out,
           :solve_time => solve_time
           ))
