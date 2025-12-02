@@ -17,6 +17,7 @@ function run_cluster(cluster::Int,
         
   # Process each sample in this cluster
   for idx in cluster_indices
+    local status, solve_time, out
     try
       # Update parameters
       for (param_idx, param_name) in enumerate(params)
@@ -42,7 +43,7 @@ function run_cluster(cluster::Int,
         out = extract(model)
       else
         @warn "Model has no solution for sample $idx" status
-        out = fill(NaN, length(extract(model)))  # Placeholder
+        out = [NaN]  # Placeholder
       end
 
     catch e
@@ -56,7 +57,7 @@ function run_cluster(cluster::Int,
     push!(cluster_results, Dict{Symbol, Any}(
           :cluster => cluster,
           :index => idx,
-          :status => termination_status(model),
+          :status => status,
           :solution => out,
           :solve_time => solve_time
           ))
