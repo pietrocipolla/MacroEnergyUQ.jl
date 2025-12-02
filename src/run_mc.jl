@@ -51,13 +51,6 @@ function run_cluster(cluster::Int,
       solve_time = 0.0
       out = [NaN]  # Fallback
     end
-            
-    # Solve the model and store results
-    time_start = time()
-    optimize!(model)
-    solve_time = time() - time_start
-
-    out = extract(model)
 
     # Store results in thread-local array
     push!(cluster_results, Dict{Symbol, Any}(
