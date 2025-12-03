@@ -12,53 +12,33 @@ function run_cluster(cluster::Int,
   cluster_indices = findall(==(cluster), clusters)
         
   # Get the model and results for this thread
-  model = model_factory(optimizer; kwargs...);
+  model = model_factory(optimizer; kwargs...)
   cluster_results = Dict{Symbol, Any}[]
         
   # Process each sample in this cluster
   for idx in cluster_indices
-    local status, solve_time, out
-    try
-      # Update parameters
-      for (param_idx, param_name) in enumerate(params)
-        if params_type == :objective
-          set_objective_coefficient(model, 
-                                    variable_by_name(model, param_name), 
-                                    data[param_idx, idx])
-        else
-          set_parameter_value(variable_by_name(model, param_name), 
-                              data[param_idx, idx])
-        end
-      end
-              
-      # Solve the model and store results
-      time_start = time()
-      optimize!(model)
-      solve_time = time() - time_start
-
-      status = termination_status(model)
-      
-      # Check if model has a solution before extracting
-      if has_values(model)
-        out = extract(model)
+    # Update parameters
+    for (param_idx, param_name) in enumerate(params)
+      if params_type == :objective
+        set_objective_coefficient(model, 
+                                  variable_by_name(model, param_name), 
+                                  data[param_idx, idx])
       else
-        @warn "Model has no solution for sample $idx" status
-        out = [NaN]  # Placeholder
+        set_parameter_value(variable_by_name(model, param_name), 
+                            data[param_idx, idx])
       end
-
-    catch e
-      @error "Error processing sample $idx" exception=(e, catch_backtrace())
-      status = MOI.OTHER_ERROR
-      solve_time = 0.0
-      out = [NaN]  # Fallback
     end
-
-    # Store results in thread-local array
+            
+    # Solve and extract (error handling delegated to extract function)
+    time_start = time()
+    optimize!(model)
+    solve_time = time() - time_start
+    
     push!(cluster_results, Dict{Symbol, Any}(
           :cluster => cluster,
           :index => idx,
-          :status => status,
-          :solution => out,
+          :status => termination_status(model),
+          :solution => extract(model),
           :solve_time => solve_time
           ))
   end
