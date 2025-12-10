@@ -49,7 +49,7 @@ function run_cluster(cluster::Int,
     if write_outputs
       # Write solution to file
       output_file = joinpath(output_dir, "sample_$(idx).csv")
-      writedlm(output_file, solution, ',')
+      CSV.write(output_file, Tables.table(solution'), writeheader=false)
     else
       # Store solution in memory
       result_dict[:solution] = solution

@@ -6,6 +6,8 @@ using QuasiMonteCarlo
 using JuMP
 using RCall
 using Distributed
+using CSV
+using Tables
 
 include("process_mc_data.jl")
 include("run_mc.jl")
