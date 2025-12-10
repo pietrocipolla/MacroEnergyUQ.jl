@@ -6,6 +6,8 @@ function run_cluster(cluster::Int,
                 params_type::Symbol = :objective,
                 clusters::Vector{Int} = ones(Int, size(data, 2)),
                 extract::Function = m -> value.(all_variables(m)),
+                write_outputs::Bool = false,
+                output_dir::String = ".",
                 kwargs...)
 
   # Get indices for this cluster
@@ -34,13 +36,26 @@ function run_cluster(cluster::Int,
     optimize!(model)
     solve_time = time() - time_start
     
-    push!(cluster_results, Dict{Symbol, Any}(
+    result_dict = Dict{Symbol, Any}(
           :cluster => cluster,
           :index => idx,
           :status => termination_status(model),
-          :solution => extract(model),
           :solve_time => solve_time
-          ))
+    )
+    
+    # Extract solution
+    solution = extract(model)
+    
+    if write_outputs
+      # Write solution to file
+      output_file = joinpath(output_dir, "sample_$(idx).csv")
+      writedlm(output_file, solution, ',')
+    else
+      # Store solution in memory
+      result_dict[:solution] = solution
+    end
+    
+    push!(cluster_results, result_dict)
   end
 
   return cluster_results
@@ -52,6 +67,9 @@ end
            params_type::Symbol = :objective,
            clusters::Vector{Int} = ones(Int, size(data, 2)),
            extract::Function = m -> value.(all_variables(m)),
+           distributed::Bool = false,
+           write_outputs::Bool = false,
+           output_dir::String = "mc_outputs",
            kwargs...)
 
 Run parallel Monte Carlo simulations using a JuMP model factory.
@@ -96,6 +114,18 @@ collects user-specified outputs. Simulations are parallelized across threads.
       value(0.1*m[:x] + 0.6*m[:y])   # custom expression
   ]
 
+- `distributed`: (Optional) Whether to use distributed computing with `pmap`.
+  Defaults to `false` (uses multi-threading).
+
+- `write_outputs`: (Optional) If `true`, solution vectors are written to individual
+  CSV files in `output_dir` instead of being stored in memory. This is useful for
+  large models where storing all solutions in memory is impractical. 
+  Defaults to `false`.
+
+- `output_dir`: (Optional) Directory path where solution files will be written when
+  `write_outputs=true`. Each solution is saved as `sample_<idx>.csv`. The directory
+  is created automatically if it doesn't exist. Defaults to `"mc_outputs"`.
+
 - `kwargs...`: Additional keyword arguments that will be passed to `model_factory`
 
 
@@ -103,7 +133,8 @@ collects user-specified outputs. Simulations are parallelized across threads.
 A NamedTuple containing:
 - `status`: Vector of optimization status for each simulation
 - `solve_time`: Vector of solve times for each simulation
-- `outputs`: Matrix where each row corresponds to a solution vector
+- `outputs`: Matrix where each row corresponds to a solution vector (only when `write_outputs=false`)
+- `output_dir`: Path to directory containing solution files (only when `write_outputs=true`)
 
 # Example
 ```julia
@@ -133,6 +164,8 @@ function run_mc(model_factory::Function, data::Matrix{Float64},
                 clusters::Vector{Int} = ones(Int, size(data, 2)),
                 extract::Function = m -> value.(all_variables(m)),
                 distributed::Bool = false,
+                write_outputs::Bool = false,
+                output_dir::String = "mc_outputs",
                 kwargs...)
     # Validate inputs
     if length(params) != size(data, 1)
@@ -147,6 +180,11 @@ function run_mc(model_factory::Function, data::Matrix{Float64},
       throw(ArgumentError("Unsupported reference to parameters: $params_type. Currently, only :objective and :parameter are supported."))
     end
     
+    # Create output directory if writing outputs
+    if write_outputs
+        mkpath(output_dir)
+    end
+    
     n_samples = size(data, 2)
     n_processes = maximum(clusters)
 
@@ -157,6 +195,8 @@ function run_mc(model_factory::Function, data::Matrix{Float64},
                                                 params_type=params_type,
                                                 clusters=clusters,
                                                 extract=extract,
+                                                write_outputs=write_outputs,
+                                                output_dir=output_dir,
                                                 kwargs...), 
                           1:n_processes; 
                           distributed=distributed)
@@ -165,19 +205,32 @@ function run_mc(model_factory::Function, data::Matrix{Float64},
     status = Vector{Any}(undef, n_samples)
     solve_time = Vector{Float64}(undef, n_samples)
     
-    # Get the size of the solution vector from the first result
-    first_solution = mc_results_raw[1][1][:solution]
-    outputs = Matrix{Float64}(undef, n_samples, length(first_solution))
-    
-    # Combine results from all threads, using the stored index to maintain input order
-    for mc_result_raw in mc_results_raw
-        for cluster_result in mc_result_raw
-            idx = cluster_result[:index]
-            status[idx] = cluster_result[:status]
-            solve_time[idx] = cluster_result[:solve_time]
-            outputs[idx, :] = cluster_result[:solution]
+    if write_outputs
+        # Return only metadata when outputs are written to disk
+        for mc_result_raw in mc_results_raw
+            for cluster_result in mc_result_raw
+                idx = cluster_result[:index]
+                status[idx] = cluster_result[:status]
+                solve_time[idx] = cluster_result[:solve_time]
+            end
         end
-    end
+        
+        return (status = status, solve_time = solve_time, output_dir = output_dir)
+    else
+        # Get the size of the solution vector from the first result
+        first_solution = mc_results_raw[1][1][:solution]
+        outputs = Matrix{Float64}(undef, n_samples, length(first_solution))
+        
+        # Combine results from all threads, using the stored index to maintain input order
+        for mc_result_raw in mc_results_raw
+            for cluster_result in mc_result_raw
+                idx = cluster_result[:index]
+                status[idx] = cluster_result[:status]
+                solve_time[idx] = cluster_result[:solve_time]
+                outputs[idx, :] = cluster_result[:solution]
+            end
+        end
 
-    return (status = status, solve_time = solve_time, outputs = outputs)
+        return (status = status, solve_time = solve_time, outputs = outputs)
+    end
 end
