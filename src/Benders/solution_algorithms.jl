@@ -1,9 +1,10 @@
 function benders(
 	benders_inputs::Dict{String, Any},
-	extractor_subproblem::Function = m -> value.(all_variables(m)), # Function to extract subproblem solutions
-	extractor_master::Function = m -> value.(all_variables(m)), # Function to extract master solution
     inputs::Dict,
-    setup::Dict,
+    setup::Dict;
+    extractor_subproblem::Function = m -> value.(all_variables(m)), # Function to extract subproblem solutions
+	extractor_master::Function = m -> value.(all_variables(m)),
+    check_negative_capacities::Function = m -> default_check_negative_capacities(m), # Function to extract master solution;
     kwargs...)
 
 
@@ -16,6 +17,12 @@ function benders(
     integer_investment = setup["IntegerInvestments"]
     integer_routine_flag = false
 
+	#### Retrieve models
+	planning_problem = benders_inputs["planning_problem"]
+	planning_variables = benders_inputs["planning_variables"]
+	subproblems = benders_inputs["subproblems"]
+	planning_variables_sub = benders_inputs["planning_variables_sub"]
+
     if integer_investment == 1 && stab_method != "off"
 		all_planning_variables = all_variables(planning_problem);
 		integer_variables = all_planning_variables[is_integer.(all_planning_variables)];
@@ -25,14 +32,10 @@ function benders(
 		integer_routine_flag = true;
 	end
 
-	#### Retrieve models
-	planning_problem = benders_inputs["planning_problem"]
-	planning_variables = benders_inputs["planning_variables"]
-	subproblems = benders_inputs["subproblems"]
-	planning_variables_sub = benders_inputs["planning_variables_sub"]
+    solver_start_time = time()
 
     #### Initialize UB and LB
-	planning_sol = solve_planning_problem(planning_problem,planning_variables,inputs, extractor_master);
+	planning_sol = MacroEnergyUQ.solve_planning_problem(planning_problem,planning_variables, extractor_master, check_negative_capacities);
 	subop_sol = Dict()
 
     UB = Inf;
@@ -70,7 +73,7 @@ function benders(
 		println("done (it took $time_planning_update s).")
 
 		start_planning_sol = time()
-		unst_planning_sol = solve_planning_problem(planning_problem,planning_variables,inputs);
+		unst_planning_sol = solve_planning_problem(planning_problem,planning_variables, extractor_master, check_negative_capacities);
 		cpu_planning_sol = time()-start_planning_sol;
 		println("Solving the planning problem required $cpu_planning_sol seconds")
 
@@ -93,7 +96,7 @@ function benders(
 				UB = Inf;
 				set_integer.(integer_variables)
 				set_binary.(binary_variables)
-				planning_sol = solve_planning_problem(planning_problem,planning_variables,inputs);
+				planning_sol = solve_planning_problem(planning_problem,planning_variables, extractor_master, check_negative_capacities);
 				LB = planning_sol.LB;
 				planning_sol_best = deepcopy(planning_sol);
 				integer_routine_flag = false;
@@ -117,7 +120,7 @@ function benders(
 						fix(v,unst_planning_sol.values[name(v)];force=true)
 					end
                     println("Solving the interior level set problem with γ = $γ")
-					planning_sol = solve_int_level_set_problem(planning_problem,planning_variables,unst_planning_sol,LB,UB,γ,inputs);
+					planning_sol = solve_int_level_set_problem(planning_problem,planning_variables,unst_planning_sol,LB,UB,γ,inputs, extractor_master);
 					unfix.(integer_variables)
 					unfix.(binary_variables)
 					set_integer.(integer_variables)
@@ -126,7 +129,7 @@ function benders(
 					set_lower_bound.(binary_variables,0.0)
 				else
                     println("Solving the interior level set problem with γ = $γ")
-					planning_sol = solve_int_level_set_problem(planning_problem,planning_variables,unst_planning_sol,LB,UB,γ,inputs);
+					planning_sol = solve_int_level_set_problem(planning_problem,planning_variables,unst_planning_sol,LB,UB,γ,inputs, extractor_master);
 				end
 				cpu_stab_method = time()-start_stab_method;
 				println("Solving the interior level set problem required $cpu_stab_method seconds")

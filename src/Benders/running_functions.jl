@@ -5,30 +5,23 @@
 
 """
 
-function run_benders(master_factory::Function, # Function to build master problem ----- must have original objective function labeled as :eObj and theta variables labeled as :vTHETA
+function run_benders(master_factory::Function, # Function to build master problem ----- must have original objective function labeled as :eObj and theta variables labeled as :vTHETA. Must include optimizer builder.
     subproblem_factory::Function, # Function to build subproblems
+    case_path::String;
+    workers::Int = 1,
     distributed::Bool = false,
     write_outputs::Bool = false,
-    master_optimizer;
-    subproblem_optimizer;
-    workers::Int = 1,
-    inputs_decomp::Dict, # Decomposed inputs for subproblems - time domain split into rep periods equal to number of subproblems
     outputs_dir::String = "benders_outputs",
     extractor_subproblem::Function = m -> value.(all_variables(m)), # Function to extract subproblem solutions
-	extractor_master::Function = m -> value.(all_variables(m)); # Function to extract master solution
+	extractor_master::Function = m -> value.(all_variables(m)), # Function to extract master solution
+    check_negative_capacities::Function = m -> default_check_negative_capacities(m), # Function to check for negative capacities in the planning problem
     kwargs...
 )
-    if distributed
-        using Distributed
-        n_workers = nworkers()
-        if n_workers < workers
-            addprocs(workers - n_workers)
-        end
-    end
+
 
     # Build models
-    planning_problem, planning_variables  = master_factory(master_optimizer; kwargs...)
-    subproblems, planning_variables_sub = subproblem_factory(subproblem_optimizer, inputs_decomp; kwargs...)
+    planning_problem, planning_variables, inputs, setup = master_factory(case_path; kwargs...)
+    subproblems, planning_variables_sub = subproblem_factory(case_path, planning_variables, setup, inputs; kwargs...)
 
     # Initialize Benders inputs
     benders_inputs = Dict{String, Any}()
@@ -42,10 +35,11 @@ function run_benders(master_factory::Function, # Function to build master proble
     # Run Benders decomposition
     benders_result = benders(
         benders_inputs,
+        inputs,
+        setup;
         extractor_subproblem, # Function to extract subproblem solutions
         extractor_master, # Function to extract master solution
-        inputs,
-        setup,
+        check_negative_capacities, # Function to check for negative capacities in the planning problem
         kwargs...
     )
 
@@ -135,7 +129,6 @@ function run_benders_mga(
     
     # Check for distributed computing
     if distributed
-        using Distributed
         n_workers = nworkers()
         if n_workers < workers
             addprocs(workers - n_workers)
@@ -275,7 +268,6 @@ function run_benders_investment_sensitivity(
     
     # Check for distributed computing
     if distributed
-        using Distributed
         n_workers = nworkers()
         if n_workers < workers
             addprocs(workers - n_workers)
