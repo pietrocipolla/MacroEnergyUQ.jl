@@ -1,64 +1,116 @@
-function run_cluster(cluster::Int, 
-                model_factory::Function, 
-                data::Matrix{Float64}, 
-                params::AbstractVector{String},
-                optimizer;
-                params_type::Symbol = :objective,
-                clusters::Vector{Int} = ones(Int, size(data, 2)),
-                extract::Function = m -> value.(all_variables(m)),
-                write_outputs::Bool = false,
-                output_dir::String = ".",
-                kwargs...)
-
-  # Get indices for this cluster
-  cluster_indices = findall(==(cluster), clusters)
-        
-  # Get the model and results for this thread
-  model = model_factory(optimizer; kwargs...)
-  cluster_results = Dict{Symbol, Any}[]
-        
-  # Process each sample in this cluster
-  for idx in cluster_indices
-    # Update parameters
-    for (param_idx, param_name) in enumerate(params)
-      if params_type == :objective
-        set_objective_coefficient(model, 
-                                  variable_by_name(model, param_name), 
-                                  data[param_idx, idx])
-      else
-        set_parameter_value(variable_by_name(model, param_name), 
-                            data[param_idx, idx])
-      end
+# Helper function to update parameters in a model
+function update_parameters!(model::Model, params::AbstractVector{String}, 
+                           data::Matrix{Float64}, param_idx_col::Int, 
+                           params_type::Symbol)
+  for (param_idx, param_name) in enumerate(params)
+    if params_type == :objective
+      set_objective_coefficient(model,
+                                variable_by_name(model, param_name),
+                                data[param_idx, param_idx_col])
+    else
+      set_parameter_value(variable_by_name(model, param_name),
+                          data[param_idx, param_idx_col])
     end
-            
-    # Solve and extract (error handling delegated to extract function)
+  end
+end
+
+# Helper function to save or store results
+function save_result!(cluster_results::Vector{Dict{Symbol, Any}}, 
+                     cluster::Int, idx::Int, status, solve_time::Float64,
+                     solution::Vector, write_outputs::Bool, output_dir::String)
+  result_dict = Dict{Symbol, Any}(
+    :cluster => cluster,
+    :index => idx,
+    :status => status,
+    :solve_time => solve_time
+  )
+  
+  if write_outputs
+    output_file = joinpath(output_dir, "sample_$(idx).csv")
+    CSV.write(output_file, Tables.table(solution'), writeheader=false)
+  else
+    result_dict[:solution] = solution
+  end
+  
+  push!(cluster_results, result_dict)
+end
+
+# Process cluster for standard JuMP models
+function process_cluster_samples(model::Model, cluster_indices::Vector{Int},
+                                cluster::Int, data::Matrix{Float64},
+                                params::AbstractVector{String}, params_type::Symbol,
+                                extract::Function, write_outputs::Bool, 
+                                output_dir::String)
+  cluster_results = Dict{Symbol, Any}[]
+  
+  for idx in cluster_indices
+    update_parameters!(model, params, data, idx, params_type)
+    
     time_start = time()
     optimize!(model)
     solve_time = time() - time_start
     
-    result_dict = Dict{Symbol, Any}(
-          :cluster => cluster,
-          :index => idx,
-          :status => termination_status(model),
-          :solve_time => solve_time
-    )
-    
-    # Extract solution
     solution = extract(model)
-    
-    if write_outputs
-      # Write solution to file
-      output_file = joinpath(output_dir, "sample_$(idx).csv")
-      CSV.write(output_file, Tables.table(solution'), writeheader=false)
-    else
-      # Store solution in memory
-      result_dict[:solution] = solution
-    end
-    
-    push!(cluster_results, result_dict)
+    save_result!(cluster_results, cluster, idx, termination_status(model), 
+                solve_time, solution, write_outputs, output_dir)
   end
-
+  
   return cluster_results
+end
+
+# Process cluster for Benders decomposition
+function process_cluster_samples(components::NamedTuple, cluster_indices::Vector{Int},
+                                cluster::Int, data::Matrix{Float64},
+                                params::AbstractVector{String}, params_type::Symbol,
+                                extract::Function, write_outputs::Bool, 
+                                output_dir::String)
+  cluster_results = Dict{Symbol, Any}[]
+  planning_problem = components.planning_problem
+  benders_settings = get(components, :settings, Dict())
+  
+  for idx in cluster_indices
+    update_parameters!(planning_problem, params, data, idx, params_type)
+    
+    time_start = time()
+    results = MacroEnergySolvers.benders(
+      components.planning_problem,
+      components.subproblems,
+      components.linking_variables,
+      benders_settings
+    )
+    solve_time = time() - time_start
+    
+    convergence_achieved = length(results.LB_hist) > 0 && length(results.UB_hist) > 0 &&
+                          abs(results.UB_hist[end] - results.LB_hist[end]) < 1e-4
+    benders_status = convergence_achieved ? "CONVERGED" : "SUBOPTIMAL"
+    
+    solution = extract(results)
+    save_result!(cluster_results, cluster, idx, benders_status, 
+                solve_time, solution, write_outputs, output_dir)
+  end
+  
+  return cluster_results
+end
+
+# Main cluster processing function with multiple dispatch
+function run_cluster(cluster::Int, 
+                    model_factory::Function, 
+                    data::Matrix{Float64}, 
+                    params::AbstractVector{String},
+                    optimizer;
+                    params_type::Symbol = :objective,
+                    clusters::Vector{Int} = ones(Int, size(data, 2)),
+                    extract::Function = m -> value.(all_variables(m)),
+                    write_outputs::Bool = false,
+                    output_dir::String = ".",
+                    kwargs...)
+
+  cluster_indices = findall(==(cluster), clusters)
+  components = model_factory(optimizer; kwargs...)
+  
+  return process_cluster_samples(components, cluster_indices, cluster, data, 
+                                params, params_type, extract, 
+                                write_outputs, output_dir)
 end
 
 """

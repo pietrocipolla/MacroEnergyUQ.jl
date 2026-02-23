@@ -8,6 +8,7 @@ using RCall
 using Distributed
 using CSV
 using Tables
+using MacroEnergySolvers
 
 include("process_mc_data.jl")
 include("run_mc.jl")
