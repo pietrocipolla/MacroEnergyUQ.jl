@@ -1,6 +1,8 @@
 # Helper function to update parameters in a model
-function update_parameters!(model::Model, params::AbstractVector{String}, 
-                           data::Matrix{Float64}, param_idx_col::Int, 
+function update_parameters!(model::Model, 
+                           params::AbstractVector{String}, 
+                           data::Matrix{Float64}, 
+                           param_idx_col::Int, 
                            params_type::Symbol)
   for (param_idx, param_name) in enumerate(params)
     if params_type == :objective
@@ -16,8 +18,12 @@ end
 
 # Helper function to save or store results
 function save_result!(cluster_results::Vector{Dict{Symbol, Any}}, 
-                     cluster::Int, idx::Int, status, solve_time::Float64,
-                     solution::Vector, write_outputs::Bool, output_dir::String)
+                     cluster::Int, 
+                     idx::Int, status, 
+                     solve_time::Float64,
+                     solution::Vector, 
+                     write_outputs::Bool, 
+                     output_dir::String)
   result_dict = Dict{Symbol, Any}(
     :cluster => cluster,
     :index => idx,
@@ -28,6 +34,7 @@ function save_result!(cluster_results::Vector{Dict{Symbol, Any}},
   if write_outputs
     output_file = joinpath(output_dir, "sample_$(idx).csv")
     CSV.write(output_file, Tables.table(solution'), writeheader=false)
+    result_dict[:solution_file] = output_file
   else
     result_dict[:solution] = solution
   end
@@ -35,11 +42,15 @@ function save_result!(cluster_results::Vector{Dict{Symbol, Any}},
   push!(cluster_results, result_dict)
 end
 
-# Process cluster for standard JuMP models
-function process_cluster_samples(model::Model, cluster_indices::Vector{Int},
-                                cluster::Int, data::Matrix{Float64},
-                                params::AbstractVector{String}, params_type::Symbol,
-                                extract::Function, write_outputs::Bool, 
+# Process cluster for standard JuMP models (without context)
+function process_cluster_samples(model::Model, 
+                                cluster_indices::Vector{Int},
+                                cluster::Int, 
+                                data::Matrix{Float64},
+                                params::AbstractVector{String}, 
+                                params_type::Symbol,
+                                extract::Function, 
+                                write_outputs::Bool, 
                                 output_dir::String)
   cluster_results = Dict{Symbol, Any}[]
   
@@ -58,11 +69,88 @@ function process_cluster_samples(model::Model, cluster_indices::Vector{Int},
   return cluster_results
 end
 
-# Process cluster for Benders decomposition
-function process_cluster_samples(components::NamedTuple, cluster_indices::Vector{Int},
-                                cluster::Int, data::Matrix{Float64},
-                                params::AbstractVector{String}, params_type::Symbol,
-                                extract::Function, write_outputs::Bool, 
+# Process cluster for standard JuMP models (with context)
+function process_cluster_samples(model::Model, 
+                                context::NamedTuple,
+                                cluster_indices::Vector{Int},
+                                cluster::Int, 
+                                data::Matrix{Float64},
+                                params::AbstractVector{String}, 
+                                params_type::Symbol,
+                                extract::Function, 
+                                write_outputs::Bool, 
+                                output_dir::String)
+  cluster_results = Dict{Symbol, Any}[]
+  
+  for idx in cluster_indices
+    update_parameters!(model, params, data, idx, params_type)
+    
+    time_start = time()
+    optimize!(model)
+    solve_time = time() - time_start
+    
+    # Add index to context for this sample
+    ctx_with_index = merge(context, (index=idx,))
+    solution = extract(model; ctx=ctx_with_index)
+    save_result!(cluster_results, cluster, idx, termination_status(model), 
+                solve_time, solution, write_outputs, output_dir)
+  end
+  
+  return cluster_results
+end
+
+# Process cluster for Benders decomposition (without context)
+function process_cluster_samples(components::NamedTuple, 
+                                cluster_indices::Vector{Int},
+                                cluster::Int, 
+                                data::Matrix{Float64},
+                                params::AbstractVector{String}, 
+                                params_type::Symbol,
+                                extract::Function, 
+                                write_outputs::Bool, 
+                                output_dir::String)
+  cluster_results = Dict{Symbol, Any}[]
+  planning_problem = components.planning_problem
+  benders_settings = get(components, :settings, Dict())
+  
+  # Check if this has context - if so, dispatch to context version
+  if haskey(components, :context)
+    components_context = components.context
+    return process_cluster_samples(components, components_context, 
+                                  cluster_indices, cluster, data, params, 
+                                  params_type, extract, write_outputs, output_dir)
+  end
+  
+  for idx in cluster_indices
+    update_parameters!(planning_problem, params, data, idx, params_type)
+    
+    time_start = time()
+    results = MacroEnergySolvers.benders(
+      components.planning_problem,
+      components.subproblems,
+      components.linking_variables,
+      benders_settings
+    )
+    solve_time = time() - time_start
+    
+    solution = extract(results)
+    save_result!(cluster_results, cluster, idx, "BENDERS", 
+                solve_time, solution, write_outputs, output_dir)
+  end
+  
+  return cluster_results
+end
+
+# Process cluster for Benders decomposition (with context)
+function process_cluster_samples(components::NamedTuple, 
+                                context::NamedTuple,
+                                cluster_indices::Vector{Int},
+                                cluster::Int, 
+                                data::Matrix{Float64},
+                                params::AbstractVector{String}, 
+                                params_type::Symbol,
+                                extract::Function, 
+                                write_outputs::Bool, 
                                 output_dir::String)
   cluster_results = Dict{Symbol, Any}[]
   planning_problem = components.planning_problem
@@ -80,12 +168,10 @@ function process_cluster_samples(components::NamedTuple, cluster_indices::Vector
     )
     solve_time = time() - time_start
     
-    convergence_achieved = length(results.LB_hist) > 0 && length(results.UB_hist) > 0 &&
-                          abs(results.UB_hist[end] - results.LB_hist[end]) < 1e-4
-    benders_status = convergence_achieved ? "CONVERGED" : "SUBOPTIMAL"
-    
-    solution = extract(results)
-    save_result!(cluster_results, cluster, idx, benders_status, 
+    # Add index to context for this sample
+    ctx_with_index = merge(context, (index=idx,))
+    solution = extract(results; ctx=ctx_with_index)
+    save_result!(cluster_results, cluster, idx, "BENDERS", 
                 solve_time, solution, write_outputs, output_dir)
   end
   
@@ -108,9 +194,35 @@ function run_cluster(cluster::Int,
   cluster_indices = findall(==(cluster), clusters)
   components = model_factory(optimizer; kwargs...)
   
-  return process_cluster_samples(components, cluster_indices, cluster, data, 
-                                params, params_type, extract, 
-                                write_outputs, output_dir)
+  # Determine if this is a standard JuMP model (has :model key) or Benders components
+  if haskey(components, :model)
+    # Standard JuMP model: extract model and context
+    model = components.model
+    context = get(components, :context, nothing)
+    
+    if context !== nothing
+      return process_cluster_samples(model, context, cluster_indices, cluster, 
+                                    data, params, params_type, extract, 
+                                    write_outputs, output_dir)
+    else
+      return process_cluster_samples(model, cluster_indices, cluster, 
+                                    data, params, params_type, extract, 
+                                    write_outputs, output_dir)
+    end
+  else
+    # Benders components: dispatch with or without context
+    context = get(components, :context, nothing)
+    
+    if context !== nothing
+      return process_cluster_samples(components, context, cluster_indices, cluster, 
+                                    data, params, params_type, extract, 
+                                    write_outputs, output_dir)
+    else
+      return process_cluster_samples(components, cluster_indices, cluster, 
+                                    data, params, params_type, extract, 
+                                    write_outputs, output_dir)
+    end
+  end
 end
 
 """
@@ -152,19 +264,32 @@ collects user-specified outputs. Simulations are parallelized across threads.
   for each sample in `data`. Samples assigned to the same cluster are solved
   sequentially on the same thread. Defaults to all ones (single cluster).
 
-- `extract`: A function that extracts outputs from the solved model.
-  It should accept a JuMP model and return a vector (or any indexable object)
-  of numerical results.
+- `extract`: A function that extracts outputs from the solved model/results.
+  It can accept either one argument (the solved model/results) or two arguments 
+  (with a `ctx` keyword argument containing context data).
+  
+  The context is automatically provided if `model_factory` returns a NamedTuple
+  with a `context` field. The context can contain fields like `index` (sample index)
+  and any other data the extract function needs (e.g., the full system for post-processing).
   
   By default, `extract = m -> value.(all_variables(m))` (returns all variable values).
 
-  Example custom extractor:
+  Example custom extractors:
   ```julia
+  # Simple extractor without context
   extract = m -> [
       value(m[:x]),                   # single variable
       value(m[:y]),                   # another variable
       value(0.1*m[:x] + 0.6*m[:y])   # custom expression
   ]
+  
+  # Extractor with context (receives ctx keyword)
+  extract = (results; ctx=nothing) -> [
+      value(results.planning_sol.objective_value),
+      # ...use ctx.index for output directory
+      # ...use ctx.system for post-processing
+  ]
+  ```
 
 - `distributed`: (Optional) Whether to use distributed computing with `pmap`.
   Defaults to `false` (uses multi-threading).
