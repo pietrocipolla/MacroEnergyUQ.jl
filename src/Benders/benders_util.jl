@@ -8,6 +8,133 @@ function name_cuts!(EP_master::Model, counter::Int64)
     return counter
 end
 
+"""
+Default function to name cuts in the master problem.
+"""
+function default_name_cuts!(model::Model, counter::Int)
+    for con in all_constraints(model, include_variable_in_set_constraints=false)
+        if name(con) == ""
+            set_name(con, "BendersCut" * string(counter))
+            counter += 1
+        end
+    end
+    return counter
+end
+
+"""
+Apply cut retention strategy based on setup configuration.
+"""
+function _apply_cut_retention!(model::Model, opt_cuts::Vector{String}, retain_method::Int, setup::Dict, nsubs::Int)
+    if retain_method == 1
+        # Keep all cuts
+    elseif retain_method == 2
+        forget_cuts_master!(model, opt_cuts)
+    elseif retain_method == 3
+        recent_cuts = retain_recent_cuts(model, opt_cuts, setup["MaxCuts"])
+        forget_cuts_master!(model, recent_cuts)
+    elseif retain_method == 5
+        sp_cuts = retain_fixed_spcuts_early(model, opt_cuts, setup["MaxCuts"], nsubs)
+        forget_cuts_master!(model, sp_cuts)
+    else
+        println("No cut-retention method specified, defaulting to optimal cuts only")
+        forget_cuts_master!(model, opt_cuts)
+    end
+end
+
+"""
+Default function to extract master problem solution.
+Override with custom extractor for model-specific fields.
+"""
+function default_extract_master_solution(model::Model, master_vars::Vector{String})
+    return (
+        inv_cost = value(model[:eObj]),
+        values = Dict([s => value.(variable_by_name(model, s)) for s in master_vars])
+    )
+end
+
+"""
+Log iteration results (can be overridden or extended).
+"""
+function _log_iteration_results(master_sol::NamedTuple, subop_sol::Dict)
+    println("Investment cost: ", master_sol.inv_cost)
+    if haskey(master_sol, :zone_inv_cost)
+        println("Zone investment cost: ", master_sol.zone_inv_cost)
+    end
+    println("Operational costs: ", [subop_sol[w].op_cost for w in keys(subop_sol)])
+    if haskey(first(values(subop_sol)), :zone_cost)
+        println("Zone operational costs: ", [subop_sol[w].zone_cost for w in keys(subop_sol)])
+    end
+end
+
+function retain_recent_cuts(model::Model, master_cons::Vector{String}, num_cuts::Int)
+    cut_names = Vector{String}()
+    opt_names = Vector{String}()
+    struc_names = Vector{String}()
+    
+    for con in all_constraints(model, include_variable_in_set_constraints=false)
+        con_name = name(con)
+        if con_name == "" || occursin("BendersCut", con_name)
+            split_name = split(con_name, "_")
+            if length(split_name) >= 2
+                mga_it = tryparse(Int, split_name[2])
+                if mga_it !== nothing && mga_it == 0
+                    push!(opt_names, con_name)
+                else
+                    push!(cut_names, con_name)
+                end
+            end
+        else
+            push!(struc_names, con_name)
+        end
+    end
+    
+    opt_count = length(opt_names)
+    total_cuts = length(cut_names)
+    start_idx = max(1, total_cuts - num_cuts - opt_count)
+    
+    retained = [opt_names; cut_names[start_idx:end]]
+    return [struc_names; retained]
+end
+
+
+function retain_fixed_spcuts_early(model::Model, master_cons::Vector{String}, num_cuts::Int, nsubs::Int)
+    sp_cuts = [Vector{String}() for _ in 1:nsubs]
+    struc_names = Vector{String}()
+    
+    for con in all_constraints(model, include_variable_in_set_constraints=false)
+        con_name = name(con)
+        if occursin("BendersCut", con_name)
+            split_name = split(con_name, "_")
+            if length(split_name) >= 4
+                num_str = split(split_name[4], "[")
+                sp_idx = tryparse(Int, num_str[1])
+                if sp_idx !== nothing && 1 <= sp_idx <= nsubs
+                    push!(sp_cuts[sp_idx], con_name)
+                end
+            end
+        else
+            push!(struc_names, con_name)
+        end
+    end
+    
+    cut_names = Vector{String}()
+    for i in 1:nsubs
+        n_cuts = min(length(sp_cuts[i]), num_cuts)
+        append!(cut_names, sp_cuts[i][1:n_cuts])
+    end
+    
+    return [struc_names; cut_names]
+end
+
+function forget_cuts_master!(model::Model, retained_cons::Vector{String})
+    for con in all_constraints(model, include_variable_in_set_constraints=false)
+        if !(name(con) in retained_cons)
+            delete(model, con)
+        end
+    end
+end
+
+
 function setup_mga_master_problem!(EP_master::Model,setup::Dict)
  
 
@@ -15,197 +142,159 @@ function setup_mga_master_problem!(EP_master::Model,setup::Dict)
 
 end
 
-function make_rand_vecs(iterations::Int64, TechTypes::Int64, n_lines::Int64, Zones::Int64, ag::Bool)
-    gen_vecs = rand(Float64,(TechTypes,Zones,iterations))
-    if ag == true
-        gen_vecs = rand(Float64,(TechTypes,iterations))
-    end
-        
-    line_vecs = rand(Float64,(n_lines,iterations))
-    return gen_vecs, line_vecs
-end
+#=============================================================================
+    Helper Functions for Benders Running Functions
+=============================================================================#
 
-function make_capMM_vecs(iterations::Int64, TechTypes::Int64, n_lines::Int64,Zones::Int64)
-    cap_vecs =  rand(-1:1,TechTypes,Zones,2*iterations)
-    cap_vecs = check_it_a(cap_vecs,iterations)
-    line_vecs = rand(-1:1,n_lines,iterations)
-    #check_it_a_ag!(vecs,iterations)
-    #cap_vecs = convert_ag_to_disag(vecs,Zones)
-    return cap_vecs, line_vecs
-end
 
-function unique_int(points::AbstractArray)
-    pointst = transpose(points)
-    nrow, ncol = size(points)
+"""
+    solve_mga_master_problem(model, master_vars, inputs, id, iteration, mga_it; kwargs...)
 
-    uniques = fill(-2, (nrow, ncol))
-    counter=0
-    for i in 1:ncol
-        for k in 1:ncol
-            if points[:,i]==uniques[:,k]
-                break
-            elseif k == ncol
-                counter = counter + 1
-                uniques[:,counter] = points[:,i]
-            end
-        end
-    end
-    uniques = uniques[1:end, 1:counter]
-    uniquesT = transpose(uniques)
-    println("Done with uniques")
-    return uniques
-end
+Solve the MGA master problem and extract solution.
 
-function make_combo_vecs(iterations::Int64, TechTypes::Int64,n_lines::Int64, Zones::Int64, ratio::Float64)
-    rand_vecs, r_line_vecs = make_rand_vecs(ceil(Int64,iterations*ratio),TechTypes,n_lines,Zones)
-    cap_vecs, c_line_vecs = make_capMM_vecs(floor(Int64,iterations*(1-ratio)),TechTypes,n_lines,Zones)
+# Arguments
+- `model::Model`: The master problem JuMP model
+- `master_vars::Vector{String}`: Names of master variables to extract
+- `inputs::Dict`: Problem inputs
+- `id::Int`: Solution identifier
+- `iteration::Int`: Current iteration number
+- `mga_it::Int`: MGA iteration number
+
+# Keyword Arguments
+- `extract_master_solution::Function`: Custom solution extractor function
+- `validate_solution::Function`: Optional function to validate solution (returns bool)
+- `crossover_fallback::Bool`: Whether to retry with crossover on negative values
+
+# Returns
+- `NamedTuple`: Master problem solution
+"""
+function solve_mga_master_problem(
+    model::Model,
+    master_vars::Vector{String}, 
+    inputs::Dict, 
+    id::Int, 
+    iteration::Int, 
+    mga_it::Int;
+    extract_master_solution::Function = default_extract_master_solution,
+    validate_solution::Function = (m) -> true,
+    crossover_fallback::Bool = true
+)
+    iteration += 1
+    println("Solving MGA master problem...")
+    optimize!(model)
     
-    gen_vecs = cat(rand_vecs,cap_vecs,dims=3)
-    gen_vecs = vecs[:,:,1:iterations]
+    # Check if solution needs crossover fallback
+    needs_crossover = !validate_solution(model)
     
-    line_vecs = cat(r_line_vecs, c_line_vecs, dims = 2)
-    return gen_vecs, line_vecs
-end
-
-function convert_ag_to_disag(ag_vecs::AbstractArray, Zones::Int64)
-    (techs,iterations) = size(ag_vecs)
-    vecs = Array{Float64,3}(undef,(techs,Zones,iterations))
-    for i in 1:iterations
-        for j in 1:techs
-			vecs[j,:,i] .= ag_vecs[j,i]
-        end
-    end
-    return vecs
-end
-
-function check_it_a_ag!(a::AbstractArray, iterations::Int64)
-    (r,i) = size(a)
-    if iterations < i
-        a = a[1:r,1:iterations]
-        return a
-    else
-        println("Error")
-    end
-end
-
-function check_it_a(a::AbstractArray, iterations::Int64)
-    (r,c,i) = size(a)
-    if iterations < i
-        a = a[1:r,1:c, 1:iterations]
-        return a
-    else
-        println("Error")
-    end
-end
-
-function find_ratio(setup::Dict)
-    ratio = 0.0
-    if "ComboRatio" in keys(setup)
-        ratio = setup["ComboRatio"]
-        if ratio < 1
-            return ratio
+    if needs_crossover && crossover_fallback
+        println("***Resolving master problem with Crossover=1***")
+        set_attribute(model, "Crossover", 1)
+        optimize!(model)
+        if has_values(model)
+            master_sol = extract_master_solution(model, master_vars, inputs, id, iteration, mga_it)
+            set_attribute(model, "Crossover", 0)
         else
-            throw(ErrorException("Ratio greater than 1"))
+            error("Master problem failed to solve even with crossover enabled")
         end
     else
-        ratio = 0.25
+        master_sol = extract_master_solution(model, master_vars, inputs, id, iteration, mga_it)
     end
-    return ratio
+    
+    return master_sol
 end
 
-function generate_vecs(inputs::Dict, setup::Dict)
-    iterations = setup["ModelingToGenerateAlternativeIterations"]
-    TechTypes = collect(eachindex(unique(inputs["RESOURCES"].resource_type)))[end]
-    n_lines = length(inputs["EXPANSION_LINES"])
-    zones = inputs["Z"]
-    method = setup["MGAMethod"]
-    cluster_vecs = setup["ClusterMGAVecs"]
 
+
+"""
+Check if the MGA budget constraint is satisfied.
+"""
+function _check_budget_convergence(cost::Float64, setup::Dict)
+    budget = setup["MGABudget"]
+    relax = get(setup, "RelaxBudget", 0.0)
     
-    n_its = iterations
+    if relax > 0 && isapprox(cost, budget, rtol=relax)
+        return true
+    end
+    return cost <= budget
+end
+
+"""
+Log timing statistics for the MGA iteration.
+"""
+function _log_timing_stats(master_times::Vector{Float64}, sub_times::Vector{Float64})
+    if !isempty(master_times) && !isempty(sub_times)
+        master_avg = mean(master_times)
+        subop_avg = mean(sub_times)
+        ms_ratio = master_avg / subop_avg
+        println("MGA iteration finished")
+        println("Average Master Time = $master_avg")
+        println("Average Subop Time = $subop_avg")
+        println("Master/Subop Ratio = $ms_ratio")
+    end
+end
+
+"""
+    update_master_problem_multi_cuts_mga!(model, subop_sol, master_sol, master_vars_sub, mga_it, k)
+
+Default function to add Benders cuts to the master problem for MGA.
+Override this for model-specific cut generation.
+"""
+function update_master_problem_multi_cuts_mga!(model::Model, subop_sol::Dict, master_sol::NamedTuple, master_vars_sub::Dict, mga_it::Int, k::Int)
+    W = keys(subop_sol)
     
+    for w in W
+        cut_name = "BendersCut_$(mga_it)_$(k)_$w"
+        @constraint(model,
+            subop_sol[w].theta_coeff * model[:vTHETA][w] >= 
+            subop_sol[w].op_cost + sum(
+                subop_sol[w].lambda[i] * (variable_by_name(model, master_vars_sub[w][i]) - master_sol.values[master_vars_sub[w][i]]) 
+                for i in 1:length(master_vars_sub[w])
+            ),
+            base_name = cut_name
+        )
+    end
+end
+
+
+#=============================================================================
+    Helper Functions for Model-Specific Adapters
+=============================================================================#
+
+function default_objective_factory!(planning_problem::Model, mga_variables::Vector{String}, vector::Vector{Float64}; method::Int = 0, kwargs...)
+    if length(vector) != length(mga_variables)
+        error("Length of objective vector must match number of MGA variables")
+    end
+    @objective(planning_problem, Min, sum(vector[i] * variable_by_name(planning_problem, mga_variables[i]) for i in 1:length(mga_variables)))
+    
+    return
+end
+
+function default_vector_generator(mga_variables::Vector{String}, iterations::Int; method::Int = 0, kwargs...)
+    vars = length(mga_variables)
+    coeffs = zeros(iterations, vars)
     if method == 0
-        ratio = find_ratio(setup)
-        mats, line_vecs = make_combo_vecs(iterations,TechTypes,n_lines,zones,ratio)
+        coeffs = rand(Float64, (iterations, vars))
     elseif method == 1
-        mats, line_vecs = make_rand_vecs(iterations,TechTypes,n_lines,zones)
+        coeffs = rand(-1:1, (iterations, vars))
     elseif method == 2
-        mats, line_vecs = make_capMM_vecs(iterations,TechTypes,n_lines,zones)
+        coeffs_1 = rand(Float64, (ceil(Int64,iterations*0.25), vars))
+        coeffs_2 = rand(-1:1, (floor(Int64,iterations*0.75), vars))
+        coeffs = vcat(coeffs_1, coeffs_2)
     end
-    println(size(mats))
-    max_mats = -1.0 .* mats
-    max_line_vecs = -1.0 .* line_vecs
-    all_mats = cat(mats, max_mats, dims=3)
-    all_line_vecs = cat(line_vecs, max_line_vecs, dims=2)
-    
-    println(size(all_mats))
-    if cluster_vecs == 1
-        nclusters= setup["NumMGACluster"]
-        focus_cluster = setup["FocusCluster"]
-        if focus_cluster == 1
-            iterations = 320
-            nclusters = 16
-        end
-        all_vecs = Vector{Vector{Float64}}(undef,0)
-        (r,c,its) = size(all_mats)
-        vec_leng = r*c
-        for i in 1:its
-            mat = all_mats[:,:,i]
-            vec = reshape(mat, vec_leng)
-            push!(all_vecs, vec)
-        end
-        all_vecs = mapreduce(permutedims, vcat, all_vecs)
-        if focus_cluster == 0
-            all_vecs = kmeanscluster_vecs(all_vecs, nclusters)
-        else
-            all_vecs = kmeansfocuscluster_vecs(all_vecs, nclusters, n_its)
-        end
-        
-        for i in 1:n_its*2
-            all_mats[:,:,i] = reshape(all_vecs[i,:], (r,c))
-        end
-    end
-    return all_mats, all_line_vecs
+    return coeffs
 end
 
-function kmeanscluster_vecs(vecs::AbstractArray, nclusters::Int64)
-    vecsT = (vecs')
-    result= kmeans(vecsT,nclusters)
-    clusters=Vector{Vector{Vector{Float64}}}(undef,0)
-    final_clusters = Vector{Vector{Float64}}(undef,0)
-    for i in 1:nclusters
-        push!(clusters, Vector{Vector{Float64}}(undef,0))
-    end
-    assignments = result.assignments
-    for i in 1:length(assignments)
-        push!(clusters[assignments[i]], vecs[i,:])
-    end
-    for i in 1:nclusters
-        append!(final_clusters, clusters[i])
-    end
-    vecs_out = mapreduce(permutedims, vcat, final_clusters)
-    return vecs_out
-end
+"""
+    setup_budget_constraint!(model::Model, setup::Dict, theta_var::Symbol = :vTHETA, obj_expr::Symbol = :eObj)
 
-function kmeansfocuscluster_vecs(vecs::AbstractArray, nclusters::Int64, n_its::Int64)
-    vecsT = (vecs')
-    result= kmeans(vecsT,nclusters)
-    clusters=Vector{Vector{Vector{Float64}}}(undef,0)
-    final_clusters = Vector{Vector{Float64}}(undef,0)
-    for i in 1:nclusters
-        push!(clusters, Vector{Vector{Float64}}(undef,0))
-    end
-    assignments = result.assignments
-    for i in 1:length(assignments)
-        push!(clusters[assignments[i]], vecs[i,:])
-    end
-    for i in 1:nclusters
-        if length(clusters[i]) >= n_its*2
-            final_clusters = clusters[i][1:n_its*2]
-            break
-        end
-        #append!(final_clusters, clusters[i])
-    end
-    vecs_out = mapreduce(permutedims, vcat, final_clusters)
-    return vecs_out
+Add a budget constraint for MGA to the master problem.
+
+# Arguments
+- `model`: The JuMP model
+- `setup`: Setup dictionary containing "MGABudget" key
+- `theta_var`: Symbol for theta variables (default: :vTHETA)
+- `obj_expr`: Symbol for objective expression (default: :eObj)
+"""
+function setup_budget_constraint!(model::Model, setup::Dict; theta_var::Symbol = :vTHETA, obj_expr::Symbol = :eObj)
+    @constraint(model, cMGABudget, model[obj_expr] + sum(model[theta_var]) == setup["MGABudget"])
 end

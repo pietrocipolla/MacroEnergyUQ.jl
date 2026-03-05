@@ -182,8 +182,9 @@ function mga_cutting_plane(
     setup::Dict, 
     inputs::Dict, 
     mga_it::Int;
-    extract_master_solution::Function = default_extract_master_solution,
-	extractor_subproblem::Function = m -> value.(all_variables(m))
+    extract_master_solution::Function = m -> value.(all_variables(m)),
+	extractor_subproblem::Function = m -> value.(all_variables(m)),
+    check_negative_capacities::Function = m -> default_check_negative_capacities(m) # Function to extract master solution;
 )
     # Initialize timing
     cpu_time = [0.0]
