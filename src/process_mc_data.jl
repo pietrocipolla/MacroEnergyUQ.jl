@@ -196,7 +196,84 @@ function _reorder_within_clusters(data::Matrix{Float64},
         return _reorder_within_clusters_nn(data, data_quantiles, clusters, starting_point_quantile)
     elseif sorting_algorithm == :tsp
         return _reorder_within_clusters_tsp(data, data_quantiles, clusters, optimizer)
+    elseif sorting_algorithm == :min_angle
+        return _reorder_within_clusters_min_angle(data, data_quantiles, clusters, starting_point_quantile)
     end
+end
+
+
+# Probably good for investment sensitivities. Not sure how it will perform for others.
+"""
+    _reorder_within_clusters_min_angle(data::Matrix{Float64}, data_quantiles::Matrix{Float64}, clusters::Vector{Int}, starting_point_quantile::Vector{Float64})
+
+
+Private function that reorders points within each cluster by selecting the point that forms the smallest angle with the current point and the starting_point_quantile.
+
+Arguments:
+- `data`: Matrix of original input data
+- `data_quantiles`: Matrix with the multivariate quantiles
+- `clusters`: Vector of cluster assignments for each point
+- `starting_point_quantile`: Reference point in quantile space for starting the path
+
+Returns:
+- Tuple containing:
+  1. Reordered original data matrix
+  2. Indices giving the new order of points
+
+"""
+function _reorder_within_clusters_min_angle(data::Matrix{Float64}, 
+                                            data_quantiles::Matrix{Float64}, 
+                                            clusters::Vector{Int},
+                                            starting_point_quantile::Vector{Float64})
+    n_clusters = maximum(clusters)
+    n_cols = size(data, 2)
+    
+    # Initialize output arrays
+    reordered_data = zeros(size(data))
+    reordered_indices = collect(1:n_cols)
+    
+    # Process each cluster
+    for cluster in 1:n_clusters
+        # Find points belonging to current cluster
+        cluster_mask = clusters .== cluster
+        cluster_points = data_quantiles[:, cluster_mask]
+        original_indices = findall(cluster_mask)
+        n_points = length(original_indices)
+        
+        if n_points > 0
+            # Array to store the new order of points
+            new_order = Vector{Int}(undef, n_points)
+            
+            # Find the point closest to starting_point_quantile
+            distances_to_starting_point = [sum((cluster_points[:, i] .- starting_point_quantile).^2) for i in 1:n_points]
+            current_idx = argmin(distances_to_starting_point)
+            new_order[1] = current_idx
+            
+            # Build path using minimum angle criterion
+            unvisited = trues(n_points)
+            unvisited[current_idx] = false
+            
+            for i in 2:n_points
+                current_point = cluster_points[:, current_idx]
+                
+                # Calculate angles to all unvisited points
+                angles = [unvisited[j] ? acos(dot(cluster_points[:, j] - current_point, starting_point_quantile - current_point) / 
+                                              (norm(cluster_points[:, j] - current_point) * norm(starting_point_quantile - current_point))) : Inf 
+                          for j in 1:n_points]
+                
+                # Find point with smallest angle
+                current_idx = argmin(angles)
+                new_order[i] = current_idx
+                unvisited[current_idx] = false
+            end
+            
+            # Apply the new ordering to both data matrices
+            reordered_data[:, original_indices] = data[:, original_indices[new_order]]
+            reordered_indices[original_indices] = original_indices[new_order]
+        end
+    end
+    
+    return reordered_data, reordered_indices
 end
 
 """

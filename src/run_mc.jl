@@ -112,6 +112,9 @@ function process_cluster_samples(components::NamedTuple,
   cluster_results = Dict{Symbol, Any}[]
   planning_problem = components.planning_problem
   benders_settings = get(components, :settings, Dict())
+
+  counter = 1
+  planning_constraints = name.(all_constraints(planning_problem, include_variable_in_set_constraints=false))
   
   # Check if this has context - if so, dispatch to context version
   if haskey(components, :context)
@@ -120,7 +123,6 @@ function process_cluster_samples(components::NamedTuple,
                                   cluster_indices, cluster, data, params, 
                                   params_type, extract, write_outputs, output_dir)
   end
-  
   for idx in cluster_indices
     update_parameters!(planning_problem, params, data, idx, params_type)
     
@@ -132,13 +134,83 @@ function process_cluster_samples(components::NamedTuple,
       benders_settings
     )
     solve_time = time() - time_start
-    
+
+    ### Cut Management ###
+
+    # Label cuts by iteration
+    counter = name_cuts(planning_problem, counter)
+
+    # Manage cut storage
+    planning_constraints = manage_cuts(planning_problem, planning_constraints, benders_settings[:cut_setting])
+
+    ### End Cut Management ###
     solution = extract(results)
     save_result!(cluster_results, cluster, idx, "BENDERS", 
                 solve_time, solution, write_outputs, output_dir)
   end
   
   return cluster_results
+end
+
+# Helper functions for Benders cuts
+# Name cuts by number for potential reuse
+function name_cuts(planning_problem::Model, counter::Int)
+  for con in all_constraints(planning_problem,include_variable_in_set_constraints=false)
+      if name(con) == ""
+          set_name(con,"Cut_"*string(counter))
+      end
+      counter+=1
+  end
+  return counter
+end
+
+# Manage cut storage
+function manage_cuts( planning_problem::Model, 
+                      planning_constraints::Vector{String}, 
+                      benders_settings::Dict)
+
+    cut_setting = get(benders_settings, :cut_setting, "store_lc")
+    if cut_setting == "store_all"
+        planning_constraints = name.(all_constraints(planning_problem, include_variable_in_set_constraints=false))
+        return planning_constraints
+    elseif cut_setting == "store_lc"
+        cuts_already_saved = any(occursin.("Cut_", planning_constraints))
+        if cuts_already_saved
+            # forget cuts if past first iteration
+            forget_cuts!(planning_problem, planning_constraints)
+        else
+            # remember cuts if first iteration
+            planning_constraints = name.(all_constraints(planning_problem, include_variable_in_set_constraints=false))
+            return planning_constraints
+        end
+    elseif cut_setting == "store_first_n"
+        num_cuts = get(benders_settings, :num_cuts, 10000)
+        for con in all_constraints(planning_problem, include_variable_in_set_constraints=false)
+            split_name = split(name(con), "_")
+            if parse(Int, split_name[2]) < num_cuts && !(name(con) in planning_constraints)
+                push!(planning_constraints, name(con))
+            else
+
+            end
+        end
+        forget_cuts!(planning_problem, planning_constraints)
+        return planning_constraints
+    elseif cut_setting == "store_none"
+        forget_cuts!(planning_problem, planning_constraints)
+    else
+        error("Invalid cut storage setting: $cut_setting. Must be one of 'store_all', or 'store_none'.")
+    end
+    return planning_constraints
+end
+
+function forget_cuts!(planning_problem::Model,constraints::Vector{String})
+    for con in all_constraints(planning_problem,include_variable_in_set_constraints=false)
+        if name(con) in constraints
+            #do nothing
+        else
+            delete(planning_problem,con)
+        end
+    end
 end
 
 # Process cluster for Benders decomposition (with context)
@@ -155,6 +227,10 @@ function process_cluster_samples(components::NamedTuple,
   cluster_results = Dict{Symbol, Any}[]
   planning_problem = components.planning_problem
   benders_settings = get(components, :settings, Dict())
+
+
+  counter = 1
+  planning_constraints = name.(all_constraints(planning_problem, include_variable_in_set_constraints=false))
   
   for idx in cluster_indices
     update_parameters!(planning_problem, params, data, idx, params_type)
@@ -167,6 +243,17 @@ function process_cluster_samples(components::NamedTuple,
       benders_settings
     )
     solve_time = time() - time_start
+
+
+    ### Cut Management ###
+
+    # Label cuts by iteration
+    counter = name_cuts(planning_problem, counter)
+
+    # Manage cut storage
+    planning_constraints = manage_cuts(planning_problem, planning_constraints, benders_settings[:cut_setting])
+
+    ### End Cut Management ###
     
     # Add index to context for this sample
     ctx_with_index = merge(context, (index=idx,))
