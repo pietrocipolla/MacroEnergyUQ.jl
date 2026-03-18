@@ -2,6 +2,7 @@ using Test
 using MacroEnergyUQ
 using QuasiMonteCarlo
 using LinearAlgebra
+using RCall
 
 @testset "process_mc_data.jl" begin
     @testset "Basic functionality" begin

@@ -20,7 +20,7 @@ Returns:
 """
 function process_mc_data(data::Matrix{Float64}, 
                         n_threads::Int; 
-                        quantile_transform::Bool = true,
+                        quantile_transform::Bool = false,
                         sorting_algorithm::Symbol = :nearest_neighbor,
                         starting_point::Vector{Float64} = fill(0.5, size(data, 1)), 
                         optimizer=nothing)
@@ -43,6 +43,15 @@ function process_mc_data(data::Matrix{Float64},
 
     if sorting_algorithm == :tsp && isnothing(optimizer)
         throw(ArgumentError("An optimizer must be provided when using the :tsp sorting algorithm."))
+    end
+
+    ext = Base.get_extension(@__MODULE__, :MacroEnergyUQRCallExt)
+    if quantile_transform && isnothing(ext)
+        throw(ArgumentError("Quantile transformation requires RCall extension. Install and load RCall to enable this feature.\nExample: ] add RCall"))
+    end
+
+    if n_threads > 1 && isnothing(ext)
+        throw(ArgumentError("Clustering for parallelization requires RCall extension. Install and load RCall to enable this feature.\nExample: ] add RCall"))
     end
     
     # Number of columns (data points) in the data matrix
