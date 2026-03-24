@@ -1,6 +1,71 @@
 module MacroEnergyUQRCallExt
 
 using MacroEnergyUQ, RCall
+using Libdl, CondaPkg, Preferences, UUIDs
+
+function __init__()
+    @info "Initializing MacroEnergyUQRCallExt..."
+    
+    try
+        _setup_rcall_preferences()
+        _setup_r_packages()
+        @info "✓ MacroEnergyUQRCallExt initialized successfully!"
+    catch e
+        @warn "Failed to initialize R environment: $e"
+    end
+end
+
+function _setup_rcall_preferences()
+    """Configure RCall preferences using CondaPkg environment."""
+    try
+        RCALL_UUID = UUID("6f49c342-dc21-5d91-9882-a32aef131414")
+        
+        # Setup CondaPkg and R
+        CondaPkg.add("r")
+        target_rhome = joinpath(CondaPkg.envdir(), "lib", "R")
+        
+        if Sys.iswindows()
+            target_libr = joinpath(target_rhome, "bin", Sys.WORD_SIZE==64 ? "x64" : "i386", "R.dll")
+        else
+            target_libr = joinpath(target_rhome, "lib", "libR.$(Libdl.dlext)")
+        end
+        
+        set_preferences!(RCALL_UUID, "Rhome" => target_rhome, "libR" => target_libr; force=true)
+        CondaPkg.activate!(ENV)
+        @info "RCall preferences configured successfully"
+    catch e
+        @warn "Could not configure RCall preferences: $e"
+    end
+end
+
+function _setup_r_packages()
+    """Setup and install required R packages."""
+    try
+        CondaPkg.withenv() do
+            # Check and install RcppEigen (must be before gsaot)
+            reval("""
+            lib = .libPaths()[grepl('.CondaPkg', .libPaths(), fixed = TRUE)]
+            if (length(lib) > 0) {
+                if (!require("RcppEigen", lib.loc = lib, quietly = TRUE)) {
+                    install.packages("RcppEigen", lib = lib, repos = "http://cran.rstudio.com/", quiet = TRUE)
+                }
+            }
+            """)
+            
+            # Check and install gsaot
+            reval("""
+            lib = .libPaths()[grepl('.CondaPkg', .libPaths(), fixed = TRUE)]
+            if (length(lib) > 0) {
+                if (!require("gsaot", lib.loc = lib, quietly = TRUE)) {
+                    install.packages("gsaot", lib = lib, repos = "http://cran.rstudio.com/", quiet = TRUE)
+                }
+            }
+            """)
+        end
+    catch e
+        @warn "CondaPkg not available, R packages must be installed manually: $e"
+    end
+end
 
 """
     transport_ot(source_marginal::Vector{Float64}, target_marginal::Vector{Float64}, cost_matrix::Matrix{Float64})
