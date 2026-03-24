@@ -188,10 +188,16 @@ function run_cluster(cluster::Int,
                     clusters::Vector{Int} = ones(Int, size(data, 2)),
                     extract::Function = m -> value.(all_variables(m)),
                     write_outputs::Bool = false,
+                    cluster_start_delay_s::Float64 = 0.0,
                     output_dir::String = ".",
                     kwargs...)
 
   cluster_indices = findall(==(cluster), clusters)
+
+  if cluster_start_delay_s > 0.0
+    sleep((cluster - 1) * cluster_start_delay_s)
+  end
+
   components = model_factory(optimizer; kwargs...)
   
   # Determine if this is a standard JuMP model (has :model key) or Benders components
@@ -342,6 +348,7 @@ function run_mc(model_factory::Function, data::Matrix{Float64},
                 extract::Function = m -> value.(all_variables(m)),
                 distributed::Bool = false,
                 write_outputs::Bool = false,
+                cluster_start_delay_s::Float64 = 0.0,
                 output_dir::String = "mc_outputs",
                 kwargs...)
     # Validate inputs
@@ -373,6 +380,7 @@ function run_mc(model_factory::Function, data::Matrix{Float64},
                                                 clusters=clusters,
                                                 extract=extract,
                                                 write_outputs=write_outputs,
+                                                cluster_start_delay_s=cluster_start_delay_s,
                                                 output_dir=output_dir,
                                                 kwargs...), 
                           1:n_processes; 
