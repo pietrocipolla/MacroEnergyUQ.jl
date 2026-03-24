@@ -1,53 +1,57 @@
-@info "Setting up R environment for MacroEnergyUQ..."
+ext = Base.get_extension(@__MODULE__, :MacroEnergyUQRCallExt)
 
-using Libdl
-using CondaPkg
-using Preferences
-using UUIDs
+if !isnothing(ext)
+    @info "Setting up R environment for MacroEnergyUQ..."
 
-const RCALL_UUID = UUID("6f49c342-dc21-5d91-9882-a32aef131414")
+    using Libdl
+    using CondaPkg
+    using Preferences
+    using UUIDs
 
-CondaPkg.add("r")
-target_rhome = joinpath(CondaPkg.envdir(), "lib", "R")
-if Sys.iswindows()
-    target_libr = joinpath(target_rhome, "bin", Sys.WORD_SIZE==64 ? "x64" : "i386", "R.dll")
-else
-    target_libr = joinpath(target_rhome, "lib", "libR.$(Libdl.dlext)")
+    const RCALL_UUID = UUID("6f49c342-dc21-5d91-9882-a32aef131414")
+
+    CondaPkg.add("r")
+    target_rhome = joinpath(CondaPkg.envdir(), "lib", "R")
+    if Sys.iswindows()
+        target_libr = joinpath(target_rhome, "bin", Sys.WORD_SIZE==64 ? "x64" : "i386", "R.dll")
+    else
+        target_libr = joinpath(target_rhome, "lib", "libR.$(Libdl.dlext)")
+    end
+
+    try
+        set_preferences!(RCALL_UUID, "Rhome" => target_rhome, "libR" => target_libr; force=true)
+        @info "RCall preferences set successfully"
+    catch e
+        @warn "Could not set RCall preferences: $e"
+    end
+
+    CondaPkg.activate!(ENV)
+
+    # Now it's safe to load RCall
+    @info "Loading RCall..."
+    using RCall
+
+    # Install necessary R packages
+    @info "Installing required R packages..."
+
+    # withenv to ensure R uses the Conda environment and the correct compiler
+    CondaPkg.withenv() do
+        R"""
+            lib = .libPaths()[grepl('.CondaPkg', .libPaths(), fixed = T)]
+            # Don't know why but RcppEigen has to be installed before gsaot
+            if (!require("RcppEigen", lib.loc=lib)) {
+                install.packages("RcppEigen", lib = lib, repos="http://cran.rstudio.com/", 
+                                quiet = TRUE)
+            }
+
+            if (!require("gsaot", lib.loc=lib)) {
+                install.packages("gsaot", lib = lib, repos="http://cran.rstudio.com/", 
+                                quiet = TRUE)
+            }
+        """
+    end
+
+    @info "R packages installed successfully!"
+
+    @info "✓ MacroEnergyUQ setup completed successfully!"
 end
-
-try
-    set_preferences!(RCALL_UUID, "Rhome" => target_rhome, "libR" => target_libr; force=true)
-    @info "RCall preferences set successfully"
-catch e
-    @warn "Could not set RCall preferences: $e"
-end
-
-CondaPkg.activate!(ENV)
-
-# Now it's safe to load RCall
-@info "Loading RCall..."
-using RCall
-
-# Install necessary R packages
-@info "Installing required R packages..."
-
-# withenv to ensure R uses the Conda environment and the correct compiler
-CondaPkg.withenv() do
-    R"""
-        lib = .libPaths()[grepl('.CondaPkg', .libPaths(), fixed = T)]
-        # Don't know why but RcppEigen has to be installed before gsaot
-        if (!require("RcppEigen", lib.loc=lib)) {
-            install.packages("RcppEigen", lib = lib, repos="http://cran.rstudio.com/", 
-                            quiet = TRUE)
-        }
-
-        if (!require("gsaot", lib.loc=lib)) {
-            install.packages("gsaot", lib = lib, repos="http://cran.rstudio.com/", 
-                            quiet = TRUE)
-        }
-    """
-end
-
-@info "R packages installed successfully!"
-
-@info "✓ MacroEnergyUQ setup completed successfully!"
