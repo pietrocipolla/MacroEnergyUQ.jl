@@ -1,13 +1,13 @@
 # MacroEnergyUQ.jl
 
-A Julia package for uncertainty quantification in energy optimization models, with a specific focus on macroeconomic energy planning models.
+A Julia package for uncertainty quantification of optimization models, with a specific focus on energy planning models.
 
 ## Features
 
 - Data preprocessing with multivariate quantile transformation
 - Integrated clustering for optimized parallel execution
 - Automatic parallelization of Monte Carlo simulations
-- Support for JuMP models with uncertain parameters
+- Support for JuMP models with and without Parameters
 
 ## Installation
 
