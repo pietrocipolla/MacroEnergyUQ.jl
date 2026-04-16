@@ -148,8 +148,8 @@ function manage_cuts(planning_problem::Model,
   elseif cut_setting == "store_binding"
     # Read parameters for binding-based storage
     binding_tol = get(benders_settings, :BindingTol, 1e-7)
-    min_cut_age = get(benders_settings, :MinCutAge, 1)
-    max_inactive_age = get(benders_settings, :MaxInactiveAge, 2)
+    min_cut_age = get(benders_settings, :MinCutAge, 0)
+    max_inactive_age = get(benders_settings, :MaxInactiveAge, 0)
 
     keep = Set(constraints_to_keep)
     active_cut_names = Set{String}()
