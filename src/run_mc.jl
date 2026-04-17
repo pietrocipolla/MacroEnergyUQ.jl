@@ -43,21 +43,8 @@ function save_result!(cluster_results::Vector{Dict{Symbol, Any}},
 end
 
 # Helper functions for Benders cuts
-"""
-    name_cuts(planning_problem::Model, next_cut_id::Int) -> Int
-
-Assign deterministic names (`Cut_<id>`) to unnamed constraints.
-Returns the next available cut id.
-"""
-function name_cuts(planning_problem::Model, next_cut_id::Int)
-  for con in all_constraints(planning_problem, include_variable_in_set_constraints=false)
-    if isempty(name(con))
-      set_name(con, "Cut_" * string(next_cut_id))
-      next_cut_id += 1
-    end
-  end
-  return next_cut_id
-end
+# Stable identifier based on JuMP/MOI constraint index (independent from names).
+constraint_id(con::JuMP.ConstraintRef) = string(JuMP.index(con))
 
 # Slack computed according to the tutorial https://jump.dev/JuMP.jl/dev/tutorials/linear/lp_sensitivity/#Constraint-sensitivity
 function cut_slack(con::JuMP.ConstraintRef)
@@ -69,21 +56,22 @@ function cut_slack(con::JuMP.ConstraintRef)
   return slack
 end
 
-function cut_constraints(planning_problem::Model)
-  filter(con -> startswith(name(con), "Cut_"),
+function cut_constraints(planning_problem::Model, base_constraint_ids::Set{String})
+  filter(con -> !(constraint_id(con) in base_constraint_ids),
          all_constraints(planning_problem, include_variable_in_set_constraints=false))
 end
 
 """
-    manage_cuts(planning_problem, constraints_to_keep, benders_settings)
+  manage_cuts(planning_problem, base_constraint_ids, cuts_to_keep, benders_settings, ...)
 
 Apply cut storage policy and remove constraints that should not be retained.
+Cuts are identified via JuMP/MOI constraint indices, not by constraint names.
 
 Supported `CutSetting` values:
 - `"store_all"`: keep all constraints.
 - `"store_lc"`: keep only constraints present after the first Benders iteration.
-- `"store_first_n"`: keep only cuts `Cut_1` to `Cut_n` (`n = benders_settings[:num_cuts]`, default 10000).
-- `"store_none"`: keep only the base constraints (those present before cut naming starts).
+- `"store_first_n"`: keep only the first `n` discovered cuts (`n = benders_settings[:NumCuts]`, default 10000).
+- `"store_none"`: keep only the base constraints (those present before Benders starts adding cuts).
 - `"store_binding"`: keep base constraints and only cuts that are binding (or recent, via aging).
 
 Optional settings for `"store_binding"`:
@@ -92,107 +80,116 @@ Optional settings for `"store_binding"`:
 - `MaxInactiveAge` (default `0`): number of consecutive non-binding iterations a cut can survive.
 """
 function manage_cuts(planning_problem::Model,
-                     constraints_to_keep::Vector{String},
+                     base_constraint_ids::Set{String},
+                     cuts_to_keep::Set{String},
                      benders_settings,
                      cut_age::Union{Nothing, Dict{String, Int}},
-                     cut_inactive_age::Union{Nothing, Dict{String, Int}})
+                     cut_inactive_age::Union{Nothing, Dict{String, Int}},
+                     cut_order::Union{Nothing, Dict{String, Int}},
+                     next_cut_order::Union{Nothing, Base.RefValue{Int}})
 
   cut_setting = get(benders_settings, :CutSetting, "store_all")
+  current_cuts = cut_constraints(planning_problem, base_constraint_ids)
+  active_cut_ids = Set(constraint_id.(current_cuts))
 
   if cut_setting == "store_all"
-    return name.(cut_constraints(planning_problem))
+    return active_cut_ids
   elseif cut_setting == "store_lc"
     # First invocation stores the current constraint set. Subsequent invocations
     # remove newly generated cuts and keep only the stored set.
-    cuts_already_saved = !isempty(constraints_to_keep)
+    cuts_already_saved = !isempty(cuts_to_keep)
     if cuts_already_saved
-      forget_cuts!(planning_problem, constraints_to_keep)
+      intersect!(cuts_to_keep, active_cut_ids)
+      forget_cuts!(planning_problem, base_constraint_ids, cuts_to_keep)
     else
-      return name.(cut_constraints(planning_problem))
+      union!(cuts_to_keep, active_cut_ids)
+      return cuts_to_keep
     end
   elseif cut_setting == "store_first_n"
     num_cuts = get(benders_settings, :NumCuts, 10000)
     @debug "Managing Benders cuts with 'store_first_n'" num_cuts
-    for con in cut_constraints(planning_problem)
-      con_name = name(con)
-      cut_idx_match = match(r"^Cut_(\d+)$", con_name)
-      if cut_idx_match !== nothing
-        cut_idx = parse(Int, cut_idx_match.captures[1])
-        if cut_idx <= num_cuts && !(con_name in constraints_to_keep)
-          push!(constraints_to_keep, con_name)
-        end
+
+    for con in current_cuts
+      con_id = constraint_id(con)
+      if !haskey(cut_order, con_id)
+        cut_order[con_id] = next_cut_order[]
+        next_cut_order[] += 1
+      end
+      if cut_order[con_id] <= num_cuts
+        push!(cuts_to_keep, con_id)
       end
     end
-    forget_cuts!(planning_problem, constraints_to_keep)
-    return constraints_to_keep
+
+    for con_id in collect(keys(cut_order))
+      if !(con_id in active_cut_ids)
+        delete!(cut_order, con_id)
+      end
+    end
+
+    intersect!(cuts_to_keep, active_cut_ids)
+    forget_cuts!(planning_problem, base_constraint_ids, cuts_to_keep)
+    return cuts_to_keep
   elseif cut_setting == "store_none"
-    forget_cuts!(planning_problem, constraints_to_keep)
+    empty!(cuts_to_keep)
+    forget_cuts!(planning_problem, base_constraint_ids, cuts_to_keep)
   elseif cut_setting == "store_binding"
     # Read parameters for binding-based storage
     binding_tol = get(benders_settings, :BindingTol, 1e-7)
     min_cut_age = get(benders_settings, :MinCutAge, 0)
     max_inactive_age = get(benders_settings, :MaxInactiveAge, 0)
 
-    keep = Set(constraints_to_keep)
-    active_cut_names = Set{String}()
+    keep = Set{String}()
 
-    for con in cut_constraints(planning_problem)
-      con_name = name(con)
-      push!(active_cut_names, con_name)
-      current_age = get(cut_age, con_name, 0) + 1
-      cut_age[con_name] = current_age
+    for con in current_cuts
+      con_id = constraint_id(con)
+      current_age = get(cut_age, con_id, 0) + 1
+      cut_age[con_id] = current_age
 
       if current_age <= min_cut_age
-        cut_inactive_age[con_name] = 0
-        push!(keep, con_name)
+        cut_inactive_age[con_id] = 0
+        push!(keep, con_id)
         continue
       end
 
       slack = cut_slack(con)
       if slack <= binding_tol
-        cut_inactive_age[con_name] = 0
-        push!(keep, con_name)
+        cut_inactive_age[con_id] = 0
+        push!(keep, con_id)
       else
-        inactive_age = get(cut_inactive_age, con_name, 0) + 1
-        cut_inactive_age[con_name] = inactive_age
+        inactive_age = get(cut_inactive_age, con_id, 0) + 1
+        cut_inactive_age[con_id] = inactive_age
         if inactive_age <= max_inactive_age
-          push!(keep, con_name)
+          push!(keep, con_id)
         else
-          delete!(keep, con_name)
+          delete!(keep, con_id)
         end
       end
     end
 
     # Remove stale entries from the aging dictionaries.
-    for cut_name in collect(keys(cut_age))
-      if !(cut_name in active_cut_names)
-        delete!(cut_age, cut_name)
-        delete!(cut_inactive_age, cut_name)
+    for cut_id in collect(keys(cut_age))
+      if !(cut_id in active_cut_ids)
+        delete!(cut_age, cut_id)
+        delete!(cut_inactive_age, cut_id)
       end
     end
 
-    # Drop references to cuts that no longer exist in the planning model.
-    for cut_name in collect(keep)
-      if startswith(cut_name, "Cut_") && !(cut_name in active_cut_names)
-        delete!(keep, cut_name)
-      end
-    end
-
-    constraints_to_keep = collect(keep)
-    forget_cuts!(planning_problem, constraints_to_keep)
+    cuts_to_keep = keep
+    forget_cuts!(planning_problem, base_constraint_ids, cuts_to_keep)
   else
     error("Invalid cut storage setting: $cut_setting. Must be one of 'store_all', 'store_lc', 'store_first_n', 'store_none', or 'store_binding'.")
   end
 
-  return constraints_to_keep
+  return cuts_to_keep
 end
 
-function forget_cuts!(planning_problem::Model, constraints_to_keep::Vector{String})
-  keep = Set(constraints_to_keep)
+function forget_cuts!(planning_problem::Model,
+                      base_constraint_ids::Set{String},
+                      cuts_to_keep::Set{String})
   to_delete = JuMP.ConstraintRef[]
 
-  for con in cut_constraints(planning_problem)
-    if !(name(con) in keep)
+  for con in cut_constraints(planning_problem, base_constraint_ids)
+    if !(constraint_id(con) in cuts_to_keep)
       push!(to_delete, con)
     end
   end
@@ -275,18 +272,13 @@ function process_cluster_samples(components::NamedTuple,
   planning_problem = components.planning_problem
   benders_settings = get(components, :settings, Dict())
 
-  counter = 1
-  planning_constraints = name.(all_constraints(planning_problem, include_variable_in_set_constraints=false))
+  base_constraint_ids = Set(constraint_id.(all_constraints(planning_problem)))
+  cuts_to_keep = Set{String}()
   cut_age = Dict{String, Int}()
   cut_inactive_age = Dict{String, Int}()
+  cut_order = Dict{String, Int}()
+  next_cut_order = Ref(1)
   
-  # Check if this has context - if so, dispatch to context version
-  if haskey(components, :context)
-    components_context = components.context
-    return process_cluster_samples(components, components_context, 
-                                  cluster_indices, cluster, data, params, 
-                                  params_type, extract, write_outputs, output_dir)
-  end
   for idx in cluster_indices
     update_parameters!(planning_problem, params, data, idx, params_type)
     
@@ -304,24 +296,14 @@ function process_cluster_samples(components::NamedTuple,
                 solve_time, solution, write_outputs, output_dir)
 
     ### Cut Management ###
-
-    cut_setting = get(benders_settings, :CutSetting, "store_all")
-
-    if cut_setting == "store_binding"
-      # set_name(...) is a model modification and can invalidate primal values.
-      # For binding-based filtering, evaluate slack before assigning new cut names.
-      planning_constraints = manage_cuts(planning_problem, planning_constraints, benders_settings,
-                                         cut_age, cut_inactive_age)
-      counter = name_cuts(planning_problem, counter)
-    else
-      # Label cuts by iteration
-      counter = name_cuts(planning_problem, counter)
-
-      # Manage cut storage
-      planning_constraints = manage_cuts(planning_problem, planning_constraints, benders_settings,
-                                         cut_age, cut_inactive_age)
-    end
-
+    cuts_to_keep = manage_cuts(planning_problem,
+                               base_constraint_ids,
+                               cuts_to_keep,
+                               benders_settings,
+                               cut_age,
+                               cut_inactive_age,
+                               cut_order,
+                               next_cut_order)
     ### End Cut Management ###
   end
   
@@ -343,11 +325,12 @@ function process_cluster_samples(components::NamedTuple,
   planning_problem = components.planning_problem
   benders_settings = get(components, :settings, Dict())
 
-
-  counter = 1
-  planning_constraints = name.(all_constraints(planning_problem, include_variable_in_set_constraints=false))
+  base_constraint_ids = Set(constraint_id.(all_constraints(planning_problem)))
+  cuts_to_keep = Set{String}()
   cut_age = Dict{String, Int}()
   cut_inactive_age = Dict{String, Int}()
+  cut_order = Dict{String, Int}()
+  next_cut_order = Ref(1)
   
   for idx in cluster_indices
     update_parameters!(planning_problem, params, data, idx, params_type)
@@ -368,24 +351,14 @@ function process_cluster_samples(components::NamedTuple,
                 solve_time, solution, write_outputs, output_dir)
 
     ### Cut Management ###
-
-    cut_setting = get(benders_settings, :CutSetting, "store_all")
-
-    if cut_setting == "store_binding"
-      # set_name(...) is a model modification and can invalidate primal values.
-      # For binding-based filtering, evaluate slack before assigning new cut names.
-      planning_constraints = manage_cuts(planning_problem, planning_constraints, benders_settings,
-                                         cut_age, cut_inactive_age)
-      counter = name_cuts(planning_problem, counter)
-    else
-      # Label cuts by iteration
-      counter = name_cuts(planning_problem, counter)
-
-      # Manage cut storage
-      planning_constraints = manage_cuts(planning_problem, planning_constraints, benders_settings,
-                                         cut_age, cut_inactive_age)
-    end
-
+    cuts_to_keep = manage_cuts(planning_problem,
+                               base_constraint_ids,
+                               cuts_to_keep,
+                               benders_settings,
+                               cut_age,
+                               cut_inactive_age,
+                               cut_order,
+                               next_cut_order)
     ### End Cut Management ###
   end
   
