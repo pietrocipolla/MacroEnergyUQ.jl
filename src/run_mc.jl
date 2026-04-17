@@ -74,24 +74,6 @@ function cut_constraints(planning_problem::Model)
          all_constraints(planning_problem, include_variable_in_set_constraints=false))
 end
 
-function is_feasibility_cut(planning_problem::Model, con::JuMP.ConstraintRef)
-  if !haskey(object_dictionary(planning_problem), :vTHETA)
-    return false
-  end
-
-  theta_ref = planning_problem[:vTHETA]
-  theta_vars = theta_ref isa AbstractArray ? vec(theta_ref) : [theta_ref]
-
-  for vtheta in theta_vars
-    coeff = normalized_coefficient(con, vtheta)
-    if abs(coeff) > 1e-12
-      return false
-    end
-  end
-
-  return true
-end
-
 """
     manage_cuts(planning_problem, constraints_to_keep, benders_settings)
 
@@ -159,14 +141,6 @@ function manage_cuts(planning_problem::Model,
       push!(active_cut_names, con_name)
       current_age = get(cut_age, con_name, 0) + 1
       cut_age[con_name] = current_age
-
-      # Feasibility cuts are structural safeguards and should never be pruned
-      # by binding/inactive logic, otherwise infeasible subproblems can recur.
-      if is_feasibility_cut(planning_problem, con)
-        cut_inactive_age[con_name] = 0
-        push!(keep, con_name)
-        continue
-      end
 
       if current_age <= min_cut_age
         cut_inactive_age[con_name] = 0
@@ -302,7 +276,7 @@ function process_cluster_samples(components::NamedTuple,
   benders_settings = get(components, :settings, Dict())
 
   counter = 1
-  planning_constraints = name.(cut_constraints(planning_problem))
+  planning_constraints = name.(all_constraints(planning_problem, include_variable_in_set_constraints=false))
   cut_age = Dict{String, Int}()
   cut_inactive_age = Dict{String, Int}()
   
@@ -371,7 +345,7 @@ function process_cluster_samples(components::NamedTuple,
 
 
   counter = 1
-  planning_constraints = name.(cut_constraints(planning_problem))
+  planning_constraints = name.(all_constraints(planning_problem, include_variable_in_set_constraints=false))
   cut_age = Dict{String, Int}()
   cut_inactive_age = Dict{String, Int}()
   
