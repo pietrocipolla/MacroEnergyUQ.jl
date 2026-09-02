@@ -37,7 +37,7 @@ function process_mc_data(data::Matrix{Float64},
         throw(ArgumentError("Number of threads ($n_threads) is greater than number of points ($(size(data, 2)))."))
     end
 
-    if sorting_algorithm != :nearest_neighbor && sorting_algorithm != :tsp
+    if sorting_algorithm != :nearest_neighbor && sorting_algorithm != :tsp && sorting_algorithm != :none
         throw(ArgumentError("Unsupported sorting algorithm: $sorting_algorithm. Currently, only :nearest_neighbor and :tsp are supported."))
     end
 
@@ -70,13 +70,17 @@ function process_mc_data(data::Matrix{Float64},
         clusters = _generate_cluster(data_quantiles, n_threads)
     end
 
-    # Reorder points within each cluster
-    data, original_indices = _reorder_within_clusters(data, 
-                                                      data_quantiles, 
-                                                      clusters, 
-                                                      starting_point_quantiles, 
-                                                      sorting_algorithm,
-                                                      optimizer)
+    # Reorder points within each cluster if requested
+    if sorting_algorithm != :none
+        original_indices = collect(1:n_cols)
+    else
+        data, original_indices = _reorder_within_clusters(data, 
+                                                        data_quantiles, 
+                                                        clusters, 
+                                                        starting_point_quantiles, 
+                                                        sorting_algorithm,
+                                                        optimizer)
+    end
 
     return data, clusters, original_indices
 end
