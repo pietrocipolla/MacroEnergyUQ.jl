@@ -1,79 +1,77 @@
 # MacroEnergyUQ.jl
 
-A Julia package for uncertainty quantification of optimization models, with a specific focus on energy planning models.
-
-Requires Julia 1.10 or later.
-
-## Features
-
-- Data preprocessing with multivariate quantile transformation
-- Integrated clustering for optimized parallel execution
-- Automatic parallelization of Monte Carlo simulations
-- Support for JuMP models with and without Parameters
+MacroEnergyUQ is a Julia package for uncertainty quantification of JuMP-based
+optimization models, with a focus on energy-system planning. It provides Monte
+Carlo execution, sample clustering and reordering, disk-backed outputs, Benders
+integration through MacroEnergySolvers, and optional optimal-transport
+sensitivity analysis through RCall.
 
 ## Installation
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/pietrocipolla/MacroEnergyUQ.jl")
+Pkg.add(url = "https://github.com/pietrocipolla/MacroEnergyUQ.jl")
 ```
 
-### Troubleshooting RCall Installation
-
-If you encounter issues with the RCall installation (which is required for this package), you can try the CondaPkg approach described in the [RCall installation guide](https://juliainterop.github.io/RCall.jl/stable/installation/#(Experimental)-Usage-with-CondaPkg). This package uses CondaPkg to manage the R environment automatically, but in some cases manual configuration may be needed.
-
-## Basic Usage
+## Quick start
 
 ```julia
-using MacroEnergyUQ
-using JuMP
-using HiGHS
-using QuasiMonteCarlo
+using HiGHS, JuMP, MacroEnergyUQ
 
-# Define a function that creates your model
-function create_model(optimizer; demand::Float64 = 1.0, min_production::Float64 = 0.0)
+function create_model(optimizer; demand = 1.0)
     model = Model(optimizer)
-    @variable(model, x >= min_production)
-    @variable(model, y >= min_production)
-    @objective(model, Min, 0.1*x + 0.6*y)
-    @constraint(model, x + y >= demand)
+    @variable(model, wind >= 0)
+    @variable(model, gas >= 0)
+    @constraint(model, wind + gas >= demand)
+    @objective(model, Min, 40.0 * wind + 70.0 * gas)
     return model
 end
 
-# Generate sample points using QuasiMonteCarlo
-n_samples = 100
-n_params = 2
-data = QuasiMonteCarlo.sample(n_samples, n_params, SobolSample())
+# Each row is a parameter; each column is a sample.
+data = [35.0 45.0 55.0;
+        75.0 70.0 65.0]
 
-# Run Monte Carlo simulations
-results = run_mc(create_model, data, ["x", "y"], HiGHS.Optimizer;
-                demand = 2.0, min_production = 0.1)
+results = run_mc(
+    create_model,
+    data,
+    ["wind", "gas"],
+    HiGHS.Optimizer;
+    extract = model -> [
+        objective_value(model),
+        value(model[:wind]),
+        value(model[:gas]),
+    ],
+)
 ```
 
-The model factory must accept the optimizer as its first argument. It may return
-the `JuMP.Model` directly, as above, or return `(model=model, context=context)`
-when the extraction function needs additional context. In the latter case,
-`context` must be a NamedTuple and the extractor is called as
-`extract(model; ctx=context)`, with the current one-based sample `index` added
-to `context` automatically.
+`results.outputs` has one row per sample. `results.status` and
+`results.solve_time` use the same order as the input columns.
 
-## Advanced Features
+## Documentation and templates
 
-### Data Preprocessing
+The complete manual is under [`docs/src`](docs/src/index.md), including:
 
-```julia
-using Distributions
+- [getting started](docs/src/getting_started.md);
+- [Monte Carlo factories, parallelism, and outputs](docs/src/monte_carlo.md);
+- [sample preprocessing](docs/src/preprocessing.md);
+- [optimal-transport sensitivity analysis](docs/src/sensitivity.md); and
+- the [API reference](docs/src/api.md).
 
-data = cat(rand(Normal(100, 10), 100)', rand(LogNormal(4, 0.3), 100)', dims=1) 
-data, clusters, original_indices = MacroEnergyUQ.process_mc_data(data, 4)
+Two case-oriented templates are included:
+
+- [`examples/genx_template.jl`](examples/genx_template.jl)
+- [`examples/macroenergy_template.jl`](examples/macroenergy_template.jl)
+
+Both templates mark the case-specific paths, JuMP variable names, sample data,
+and extracted outputs that must be adapted.
+
+## Building the manual
+
+```bash
+julia --project=docs -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
+julia --project=docs docs/make.jl
 ```
 
-### Custom Parallelization
-
-```julia
-# Use clustering for optimized parallel execution
-results = run_mc(create_model, processed_data, ["x", "y"], Gurobi.Optimizer;
-                clusters = clusters,  # Custom cluster assignment
-                demand = 2.0,
-                min_production = 0.1)
-```
+RCall is optional for the basic single-cluster Monte Carlo workflow. Load it
+when using multi-cluster preprocessing, multivariate quantile transformation,
+or the sensitivity-analysis functions.
