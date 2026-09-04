@@ -38,6 +38,32 @@ using Distributed
         @test length(results.status) == 1
         @test size(results.outputs) == (1, 2)
     end
+
+    @testset "Supported model factory return values" begin
+        data = [0.1 0.2; 0.6 0.7]
+
+        wrapped_model(optimizer; kwargs...) = (model=simple_model(optimizer; kwargs...),)
+        wrapped_results = run_mc(wrapped_model, data, ["x", "y"], HiGHS.Optimizer;
+                                 distributed=false)
+        @test size(wrapped_results.outputs) == (2, 2)
+        @test all(wrapped_results.status .== MOI.OPTIMAL)
+
+        context_model(optimizer; kwargs...) = (
+            model=simple_model(optimizer; kwargs...),
+            context=(label=42.0,),
+        )
+        context_extract = (model; ctx) -> [objective_value(model), ctx.index, ctx.label]
+        context_results = run_mc(context_model, data, ["x", "y"], HiGHS.Optimizer;
+                                 extract=context_extract, distributed=false)
+        @test context_results.outputs[:, 2] == [1.0, 2.0]
+        @test context_results.outputs[:, 3] == [42.0, 42.0]
+
+        invalid_factory(optimizer; kwargs...) = (unexpected=true,)
+        @test_throws ArgumentError MacroEnergyUQ.run_cluster(
+            1, invalid_factory, data, ["x", "y"], HiGHS.Optimizer;
+            clusters=ones(Int, size(data, 2)),
+        )
+    end
     
     @testset "Custom extract function" begin
         data = [0.1 0.2 0.3;

@@ -200,10 +200,16 @@ function run_cluster(cluster::Int,
 
   components = model_factory(optimizer; kwargs...)
   
-  # Determine if this is a standard JuMP model (has :model key) or Benders components
-  if haskey(components, :model)
-    # Standard JuMP model: extract model and context
+  if components isa Model
+    return process_cluster_samples(components, cluster_indices, cluster,
+                                  data, params, params_type, extract,
+                                  write_outputs, output_dir)
+  elseif !(components isa NamedTuple)
+    throw(ArgumentError("model_factory must return a JuMP.Model or a supported NamedTuple, got $(typeof(components))"))
+  elseif haskey(components, :model)
+    # Standard JuMP model wrapped with optional context
     model = components.model
+    model isa Model || throw(ArgumentError("the `model` field returned by model_factory must be a JuMP.Model"))
     context = get(components, :context, nothing)
     
     if context !== nothing
@@ -215,8 +221,8 @@ function run_cluster(cluster::Int,
                                     data, params, params_type, extract, 
                                     write_outputs, output_dir)
     end
-  else
-    # Benders components: dispatch with or without context
+  elseif all(key -> haskey(components, key), (:planning_problem, :subproblems, :linking_variables))
+    # Benders components, with optional context
     context = get(components, :context, nothing)
     
     if context !== nothing
@@ -228,6 +234,8 @@ function run_cluster(cluster::Int,
                                     data, params, params_type, extract, 
                                     write_outputs, output_dir)
     end
+  else
+    throw(ArgumentError("unsupported NamedTuple returned by model_factory; expected a `model` field or the Benders fields `planning_problem`, `subproblems`, and `linking_variables`"))
   end
 end
 
@@ -249,8 +257,12 @@ the model parameters for each Monte Carlo sample, solves the model, and
 collects user-specified outputs. Simulations are parallelized across threads.
 
 # Arguments
-- `model_factory`: A function that returns a new JuMP model.
-  The function should accept an optimizer and additional keyword arguments.
+- `model_factory`: A function that accepts `optimizer` and any additional keyword
+  arguments, and returns one of the following:
+  - a `JuMP.Model`;
+  - a NamedTuple `(model=model,)`, optionally with a `context::NamedTuple` field;
+  - a Benders NamedTuple containing `planning_problem`, `subproblems`, and
+    `linking_variables`, optionally with `settings` and `context` fields.
 
 - `data`: A matrix where each **column** represents a sample of uncertain
   parameters, and each **row** corresponds to a parameter in `params`.
@@ -274,9 +286,10 @@ collects user-specified outputs. Simulations are parallelized across threads.
   It can accept either one argument (the solved model/results) or two arguments 
   (with a `ctx` keyword argument containing context data).
   
-  The context is automatically provided if `model_factory` returns a NamedTuple
-  with a `context` field. The context can contain fields like `index` (sample index)
-  and any other data the extract function needs (e.g., the full system for post-processing).
+  Context is supported only for NamedTuple factory results. Before each extraction,
+  `run_mc` merges the one-based sample `index` into the context and calls
+  `extract(result; ctx=context)`. The supplied context may contain any other data
+  needed for post-processing.
   
   By default, `extract = m -> value.(all_variables(m))` (returns all variable values).
 
@@ -323,18 +336,21 @@ A NamedTuple containing:
 ```julia
 using JuMP, MacroEnergyUQ
 
-# Create a simple model
-model = Model()
-@variable(model, x >= 0)
-@variable(model, y >= 0)
-@objective(model, Min, 0.1*x + 0.6*y)
-@constraint(model, x + y >= 1)
+# Define a factory that creates a fresh model for each cluster
+function create_model(optimizer)
+    model = Model(optimizer)
+    @variable(model, x >= 0)
+    @variable(model, y >= 0)
+    @objective(model, Min, 0.1*x + 0.6*y)
+    @constraint(model, x + y >= 1)
+    return model
+end
 
 # Generate sample points
 data = QuasiMonteCarlo.sample(100, 2, SobolSample())
 
 # Run Monte Carlo simulations
-results = run_mc(model, data, params=["x", "y"])
+results = run_mc(create_model, data, ["x", "y"], HiGHS.Optimizer)
 status = results.status      # Vector of solver status
 times = results.solve_time   # Vector of computation times
 Y = results.outputs         # Matrix of solutions

@@ -48,6 +48,13 @@ results = run_mc(create_model, data, ["x", "y"], HiGHS.Optimizer;
                 demand = 2.0, min_production = 0.1)
 ```
 
+The model factory must accept the optimizer as its first argument. It may return
+the `JuMP.Model` directly, as above, or return `(model=model, context=context)`
+when the extraction function needs additional context. In the latter case,
+`context` must be a NamedTuple and the extractor is called as
+`extract(model; ctx=context)`, with the current one-based sample `index` added
+to `context` automatically.
+
 ## Advanced Features
 
 ### Data Preprocessing

@@ -1,0 +1,92 @@
+name: Tests and coverage
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  test:
+    name: Julia ${{ matrix.julia-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - julia-version: "1.9"
+            coverage: false
+          - julia-version: "1"
+            coverage: true
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - name: Install R test dependency
+        shell: Rscript {0}
+        run: install.packages("transport")
+
+      - name: Set up Julia
+        uses: julia-actions/setup-julia@v3
+        with:
+          version: ${{ matrix.julia-version }}
+
+      - name: Cache Julia packages
+        uses: julia-actions/cache@v3
+        with:
+          delete-old-caches: false
+
+      - name: Configure RCall
+        shell: julia --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.activate(; temp=true)
+          Pkg.add(PackageSpec(name="RCall", version="0.14"))
+          Pkg.build("RCall")
+
+      - name: Build package
+        uses: julia-actions/julia-buildpkg@v1
+
+      - name: Run tests
+        if: ${{ !matrix.coverage }}
+        uses: julia-actions/julia-runtest@v1
+        with:
+          coverage: false
+
+      - name: Run tests with coverage
+        if: matrix.coverage
+        shell: julia --color=yes --project=. {0}
+        run: |
+          using Pkg
+          coverage_dir = joinpath(pwd(), "coverage")
+          mkpath(coverage_dir)
+          tracefile = joinpath(coverage_dir, "tracefile-%p.info")
+          Pkg.test(; julia_args=Cmd(["--code-coverage=$(tracefile)", "--code-coverage=@$(pwd())"]))
+
+      - name: Save coverage report
+        if: matrix.coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: coverage/
+          if-no-files-found: error
+
+      - name: Upload coverage to Codecov
+        if: matrix.coverage
+        uses: codecov/codecov-action@v7
+        with:
+          directory: coverage
+          fail_ci_if_error: false
+          use_oidc: true
