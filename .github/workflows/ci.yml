@@ -23,7 +23,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - julia-version: "1.9"
+          - julia-version: "1.10"
             coverage: false
           - julia-version: "1"
             coverage: true
@@ -63,33 +63,32 @@ jobs:
         uses: julia-actions/julia-buildpkg@v1
 
       - name: Run tests
-        if: ${{ !matrix.coverage }}
         uses: julia-actions/julia-runtest@v1
         with:
-          coverage: false
+          coverage: ${{ matrix.coverage }}
 
-      - name: Run tests with coverage
+      - name: Create LCOV report
         if: matrix.coverage
-        shell: julia --color=yes --project=. {0}
-        run: |
-          using Pkg
-          coverage_dir = joinpath(pwd(), "coverage")
-          mkpath(coverage_dir)
-          tracefile = joinpath(coverage_dir, "tracefile-%p.info")
-          Pkg.test(; julia_args=Cmd(["--code-coverage=$(tracefile)", "--code-coverage=@$(pwd())"]))
+        uses: julia-actions/julia-processcoverage@v1
 
       - name: Save coverage report
         if: matrix.coverage
         uses: actions/upload-artifact@v4
         with:
           name: coverage-lcov
-          path: coverage/
+          path: lcov.info
           if-no-files-found: error
 
       - name: Upload coverage to Codecov
         if: matrix.coverage
         uses: codecov/codecov-action@v7
         with:
-          directory: coverage
+          files: lcov.info
+          disable_search: true
           fail_ci_if_error: false
           use_oidc: true
+
+      - name: Remove temporary coverage files
+        if: ${{ always() && matrix.coverage }}
+        shell: bash
+        run: find src ext test -type f -name '*.cov' -delete

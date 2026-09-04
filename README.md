@@ -2,6 +2,8 @@
 
 A Julia package for uncertainty quantification of optimization models, with a specific focus on energy planning models.
 
+Requires Julia 1.10 or later.
+
 ## Features
 
 - Data preprocessing with multivariate quantile transformation
