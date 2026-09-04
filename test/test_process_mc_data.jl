@@ -2,14 +2,20 @@ using Test
 using MacroEnergyUQ
 using QuasiMonteCarlo
 using LinearAlgebra
-using RCall
+
+const HAS_RCALL = try
+    @eval using RCall
+    true
+catch
+    false
+end
 
 @testset "process_mc_data.jl" begin
     @testset "Basic functionality" begin
         # Test setup
         n_dims = 3      # number of dimensions
         n_points = 100  # number of sample points
-        n_threads = 4   # number of parallel threads
+        n_threads = HAS_RCALL ? 4 : 1   # number of parallel threads
         
         # Generate test data using Sobol sequences
         data = QuasiMonteCarlo.sample(n_points, n_dims, SobolSample())
@@ -27,10 +33,12 @@ using RCall
         # Check that all original points are present (just reordered)
         @test all(data[:, original_indices] .== processed_data)
         
-        # Test cluster sizes are relatively balanced
-        cluster_sizes = [count(==(i), cluster_assignments) for i in 1:n_threads]
-        expected_size = n_points ÷ n_threads
-        @test all(abs.(cluster_sizes .- expected_size) .<= ceil(Int, n_points/n_threads/2))
+        if HAS_RCALL
+            # Test cluster sizes are relatively balanced
+            cluster_sizes = [count(==(i), cluster_assignments) for i in 1:n_threads]
+            expected_size = n_points ÷ n_threads
+            @test all(abs.(cluster_sizes .- expected_size) .<= ceil(Int, n_points/n_threads/2))
+        end
     end
 
     @testset "Edge cases" begin

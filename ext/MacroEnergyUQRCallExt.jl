@@ -4,6 +4,10 @@ using MacroEnergyUQ, RCall
 using Libdl, CondaPkg, Preferences, UUIDs
 
 function __init__()
+    if ccall(:jl_generating_output, Cint, ()) == 1
+        return
+    end
+
     @info "Initializing MacroEnergyUQRCallExt..."
     
     try
