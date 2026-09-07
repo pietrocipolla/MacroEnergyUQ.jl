@@ -1,5 +1,8 @@
 # MacroEnergyUQ.jl
 
+[![codecov](https://codecov.io/github/pietrocipolla/MacroEnergyUQ.jl/branch/master/graph/badge.svg)](https://app.codecov.io/github/pietrocipolla/MacroEnergyUQ.jl)
+[![](https://img.shields.io/badge/docs-dev-blue.svg)](https://pietrocipolla.github.io/MacroEnergyUQ.jl/dev)
+
 MacroEnergyUQ is a Julia package for uncertainty quantification of JuMP-based
 optimization models, with a focus on energy-system planning. It provides Monte
 Carlo execution, sample clustering and reordering, disk-backed outputs, Benders
@@ -46,4 +49,3 @@ results = run_mc(
 
 `results.outputs` has one row per sample. `results.status` and
 `results.solve_time` use the same order as the input columns.
-
