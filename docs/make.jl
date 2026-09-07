@@ -32,6 +32,6 @@ makedocs(
 )
 
 deploydocs(
-    repo = "github.com/pietrocipolla/MacroEnergyUQ.git",
+    repo = "github.com/pietrocipolla/MacroEnergyUQ.jl.git",
     devbranch = "master",
 )
