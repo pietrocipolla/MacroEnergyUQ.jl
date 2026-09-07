@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   test:
@@ -44,3 +45,15 @@ jobs:
 
       - name: Run tests
         uses: julia-actions/julia-runtest@v1
+        with:
+          coverage: true
+
+      - name: Create coverage report
+        uses: julia-actions/julia-processcoverage@v1
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          files: lcov.info
+          use_oidc: true
+          fail_ci_if_error: true
