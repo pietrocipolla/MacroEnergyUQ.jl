@@ -23,10 +23,15 @@ makedocs(
         ],
         "Examples" => [
             "GenX.jl template" => "examples/genx.md",
-            "MacroEnergy.jl template" => "examples/macroenergy.md",
+            "MacroEnergy.jl tutorial" => "examples/macroenergy.md",
         ],
         "API reference" => "api.md",
     ],
     checkdocs = :exports,
     remotes = nothing,
+)
+
+deploydocs(
+    repo = "github.com/pietrocipolla/MacroEnergyUQ.git",
+    devbranch = "master",
 )

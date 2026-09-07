@@ -72,6 +72,16 @@ julia --project=docs -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.in
 julia --project=docs docs/make.jl
 ```
 
+## Deploying the manual
+
+The documentation workflow builds and deploys the manual to the `gh-pages`
+branch after a push to `master`, a `v*` tag, or a manual run from the GitHub
+Actions page. In the repository's **Settings → Pages** screen, select
+**Deploy from a branch**, then choose the `gh-pages` branch and `/ (root)`.
+
+The published development documentation is available at
+<https://pietrocipolla.github.io/MacroEnergyUQ.jl/dev/>.
+
 RCall is optional for the basic single-cluster Monte Carlo workflow. Load it
 when using multi-cluster preprocessing, multivariate quantile transformation,
 or the sensitivity-analysis functions.

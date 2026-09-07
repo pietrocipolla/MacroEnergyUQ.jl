@@ -13,10 +13,10 @@ Two update modes are supported:
 - `params_type = :parameter` changes the value of a named JuMP parameter with
   `JuMP.set_parameter_value`.
 
-Names must be Julia/JuMP string names, including indices where applicable, for
-example `"vCAP[3]"`. Verify a name on a generated model with
-`variable_by_name(model, name)` before starting a large run. String names must
-also be enabled in the upstream model generator.
+!!! important "String names"
+    Names must be Julia/JuMP string names, including indices where applicable, for
+    example `"vCAP[3]"`. String names must be enabled in `JuMP`. We are planning
+    to extend integration for parameters without string names in the future.
 
 ## Model factories
 
@@ -26,7 +26,9 @@ return:
 1. a `JuMP.Model`;
 2. `(model = model,)`, optionally with `context = (...)`; or
 3. Benders components with `planning_problem`, `subproblems`, and
-   `linking_variables`, optionally with `settings` and `context`.
+   `linking_variables`, optionally with `settings` and `context`. The code underlying 
+   uses [`MacroEnergySolvers.jl`](https://github.com/macroenergy/MacroEnergySolvers.jl).
+   Therefore, the components should be compliant with the required structure.
 
 Context must be a `NamedTuple`. Before extraction, MacroEnergyUQ adds the
 one-based sample index and calls `extract(model_or_results; ctx)`. This is useful

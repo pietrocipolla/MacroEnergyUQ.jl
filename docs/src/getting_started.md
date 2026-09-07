@@ -61,5 +61,6 @@ by `extract` for sample `i`.
 - Read [Monte Carlo simulations](@ref) for model factory return types,
   extraction contexts, parallel modes, and disk output.
 - Read [Sample preprocessing](@ref) before generating cluster assignments.
-- Use the [GenX.jl template](@ref) or [MacroEnergy.jl template](@ref) as a
+- Use the [GenX.jl template](@ref) or
+  [MacroEnergy.jl tutorial](@ref macroenergy-tutorial) as a
   case-specific starting point.
