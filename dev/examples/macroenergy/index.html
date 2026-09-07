@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>MacroEnergy.jl tutorial · MacroEnergyUQ.jl</title><meta name="title" content="MacroEnergy.jl tutorial · MacroEnergyUQ.jl"/><meta property="og:title" content="MacroEnergy.jl tutorial · MacroEnergyUQ.jl"/><meta property="twitter:title" content="MacroEnergy.jl tutorial · MacroEnergyUQ.jl"/><meta name="description" content="Documentation for MacroEnergyUQ.jl."/><meta property="og:description" content="Documentation for MacroEnergyUQ.jl."/><meta property="twitter:description" content="Documentation for MacroEnergyUQ.jl."/><meta property="og:url" content="https://pietrocipolla.github.io/MacroEnergyUQ.jl/examples/macroenergy/"/><meta property="twitter:url" content="https://pietrocipolla.github.io/MacroEnergyUQ.jl/examples/macroenergy/"/><link rel="canonical" href="https://pietrocipolla.github.io/MacroEnergyUQ.jl/examples/macroenergy/"/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.63.2/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">MacroEnergyUQ.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><a class="tocitem" href="../../getting_started/">Getting started</a></li><li><span class="tocitem">User guide</span><ul><li><a class="tocitem" href="../../monte_carlo/">Monte Carlo simulations</a></li><li><a class="tocitem" href="../../preprocessing/">Sample preprocessing</a></li><li><a class="tocitem" href="../../sensitivity/">Sensitivity analysis</a></li></ul></li><li><span class="tocitem">Examples</span><ul><li><a class="tocitem" href="../genx/">GenX.jl template</a></li><li class="is-active"><a class="tocitem" href>MacroEnergy.jl tutorial</a><ul class="internal"><li><a class="tocitem" href="#1.-Prepare-the-environment-and-example-case"><span>1. Prepare the environment and example case</span></a></li><li><a class="tocitem" href="#2.-Define-the-model-factory"><span>2. Define the model factory</span></a></li><li><a class="tocitem" href="#3.-Identify-the-uncertain-coefficients"><span>3. Identify the uncertain coefficients</span></a></li><li><a class="tocitem" href="#4.-Generate-Monte-Carlo-samples"><span>4. Generate Monte Carlo samples</span></a></li><li><a class="tocitem" href="#5.-Arrange-samples-for-solution"><span>5. Arrange samples for solution</span></a></li><li><a class="tocitem" href="#6.-Define-the-extraction-function"><span>6. Define the extraction function</span></a></li><li><a class="tocitem" href="#7.-Run-the-study"><span>7. Run the study</span></a></li><li><a class="tocitem" href="#8.-Restore-the-generated-sample-order"><span>8. Restore the generated sample order</span></a></li><li><a class="tocitem" href="#Run-the-complete-file"><span>Run the complete file</span></a></li></ul></li></ul></li><li><a class="tocitem" href="../../api/">API reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Examples</a></li><li class="is-active"><a href>MacroEnergy.jl tutorial</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>MacroEnergy.jl tutorial</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/pietrocipolla/MacroEnergyUQ.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="macroenergy-tutorial"><a class="docs-heading-anchor" href="#macroenergy-tutorial">MacroEnergy.jl tutorial</a><a id="macroenergy-tutorial-1"></a><a class="docs-heading-anchor-permalink" href="#macroenergy-tutorial" title="Permalink"></a></h1><p>This tutorial runs a monolithic MacroEnergy case over uncertain investment costs. It discovers the relevant capacity variables, samples their objective coefficients, solves every sample, and collects objectives and capacities.</p><p>The model uses the <code>main</code> branch of <a href="https://github.com/macroenergy/MacroEnergy.jl"><code>MacroEnergy.jl</code></a>. The case is the <code>multisector_3zone_simpleinputs</code> example created and maintained by the MacroEnergy team in <a href="https://github.com/macroenergy/MacroEnergyExamples.jl"><code>MacroEnergyExamples.jl</code></a>. The case is downloaded from that repository&#39;s <code>main</code> branch; MacroEnergyUQ does not copy or modify the upstream data.</p><p>The complete script is available as <a href="https://github.com/pietrocipolla/MacroEnergyUQ.jl/blob/master/examples/macroenergy_template.jl"><code>examples/macroenergy_template.jl</code></a>. The sections below unpack that script one step at a time.</p><h2 id="1.-Prepare-the-environment-and-example-case"><a class="docs-heading-anchor" href="#1.-Prepare-the-environment-and-example-case">1. Prepare the environment and example case</a><a id="1.-Prepare-the-environment-and-example-case-1"></a><a class="docs-heading-anchor-permalink" href="#1.-Prepare-the-environment-and-example-case" title="Permalink"></a></h2><p>The standalone script activates the included <code>examples/Project.toml</code> and instantiates it, so no separate project has to be created. That project obtains MacroEnergy directly from its GitHub <code>main</code> branch. On its first run the script also downloads <code>multisector_3zone_simpleinputs</code> from the examples repository&#39;s <code>main</code> branch through MacroEnergy&#39;s <code>download_example</code> function. The data are cached under the system temporary directory and reused on later runs.</p><p>Set <code>MACROENERGY_EXAMPLES_DIR</code> to choose a different cache location. No case path needs to be supplied.</p><p><code>PARAMETER_KEYWORDS</code> limits the study to technologies whose <code>vNEWUNIT_...</code> variable name contains one of the listed terms. Set it to <code>nothing</code> to include every <code>vNEWUNIT_...</code> variable.</p><pre><code class="language-julia hljs">using Pkg
+Pkg.activate(@__DIR__)
+Pkg.instantiate()
+Pkg.update(&quot;MacroEnergy&quot;)
+
+using HiGHS
+using JuMP
+using MacroEnergy
+using MacroEnergyUQ
+using Random
+
+const EXAMPLE_NAME = &quot;multisector_3zone_simpleinputs&quot;
+const EXAMPLES_DIR = get(
+    ENV,
+    &quot;MACROENERGY_EXAMPLES_DIR&quot;,
+    joinpath(tempdir(), &quot;MacroEnergyUQExamples&quot;),
+)
+const CASE_PATH = joinpath(EXAMPLES_DIR, EXAMPLE_NAME)
+const N_SAMPLES = parse(Int, get(ENV, &quot;MACROENERGY_UQ_SAMPLES&quot;, &quot;20&quot;))
+const SEED = 42
+const VARIATION = 0.20
+
+const PARAMETER_KEYWORDS = (
+    &quot;BECCS_Electricity&quot;,
+    &quot;battery&quot;,
+    &quot;offshorewind&quot;,
+    &quot;utilitypv&quot;,
+    &quot;landbasedwind&quot;,
+)
+
+const OPTIMIZER_ATTRIBUTES = (
+    &quot;solver&quot; =&gt; &quot;ipm&quot;,
+    &quot;run_crossover&quot; =&gt; &quot;off&quot;,
+    &quot;ipm_optimality_tolerance&quot; =&gt; 1e-3,
+    &quot;output_flag&quot; =&gt; false,
+)
+
+if !isdir(CASE_PATH)
+    mkpath(EXAMPLES_DIR)
+    MacroEnergy.download_example(EXAMPLE_NAME, EXAMPLES_DIR; branch = &quot;main&quot;)
+end
+isdir(CASE_PATH) || error(&quot;MacroEnergy failed to download $(EXAMPLE_NAME).&quot;)</code></pre><h2 id="2.-Define-the-model-factory"><a class="docs-heading-anchor" href="#2.-Define-the-model-factory">2. Define the model factory</a><a id="2.-Define-the-model-factory-1"></a><a class="docs-heading-anchor-permalink" href="#2.-Define-the-model-factory" title="Permalink"></a></h2><p><a href="../../api/#MacroEnergyUQ.run_mc"><code>run_mc</code></a> receives a <em>model factory</em>: a function that constructs a clean model when given an optimizer. Extra keyword arguments passed to <code>run_mc</code> are forwarded to this function.</p><p>MacroEnergyUQ calls the factory once per cluster and reuses the resulting model for every sample in that cluster. The factory below loads the case, enables JuMP string names in memory, configures HiGHS through MacroEnergy, selects the case&#39;s configured solution algorithm, and generates the JuMP model. Enabling names in memory leaves the downloaded example unchanged.</p><p>The return value contains both <code>model</code> and <code>context</code>. Context is optional, but it is useful when extraction needs MacroEnergy-specific objects. Before each extraction, MacroEnergyUQ adds the current processed-sample index as <code>ctx.index</code>.</p><pre><code class="language-julia hljs">function macroenergy_factory(optimizer; case_path, optimizer_attributes)
+    case = MacroEnergy.load_case(case_path; lazy_load = true)
+    for system in case.systems
+        system.settings = merge(
+            system.settings,
+            (EnableJuMPStringNames = true,),
+        )
+    end
+    configured_optimizer = MacroEnergy.create_optimizer(
+        optimizer,
+        nothing,
+        optimizer_attributes,
+    )
+    algorithm = MacroEnergy.solution_algorithm(case)
+    model = MacroEnergy.generate_model(case, configured_optimizer, algorithm)
+
+    return (model = model, context = (case = case,))
+end</code></pre><h2 id="3.-Identify-the-uncertain-coefficients"><a class="docs-heading-anchor" href="#3.-Identify-the-uncertain-coefficients">3. Identify the uncertain coefficients</a><a id="3.-Identify-the-uncertain-coefficients-1"></a><a class="docs-heading-anchor-permalink" href="#3.-Identify-the-uncertain-coefficients" title="Permalink"></a></h2><p>In this example, uncertainty applies to investment costs. A cost is represented by the objective coefficient of a scalar <code>vNEWUNIT_...</code> capacity variable. <code>newunit_parameters</code> selects those variables by name and optionally filters them by technology keyword.</p><p>One reference model is then built to obtain the exact variable names and their nominal objective coefficients. These names must also exist in every model subsequently created by the factory.</p><pre><code class="language-julia hljs">function newunit_parameters(model; keywords = nothing)
+    names = String[]
+    for variable in all_variables(model)
+        variable_name = name(variable)
+        is_newunit = startswith(variable_name, &quot;vNEWUNIT_&quot;)
+        matches = keywords === nothing || any(
+            keyword -&gt; occursin(lowercase(keyword), lowercase(variable_name)),
+            keywords,
+        )
+        is_newunit &amp;&amp; matches &amp;&amp; push!(names, variable_name)
+    end
+    sort!(names)
+
+    isempty(names) &amp;&amp; error(
+        &quot;No matching vNEWUNIT variables were found. Check PARAMETER_KEYWORDS &quot; *
+        &quot;and ensure EnableJuMPStringNames is true in the case settings.&quot;,
+    )
+    return names
+end
+
+reference = macroenergy_factory(
+    HiGHS.Optimizer;
+    case_path = CASE_PATH,
+    optimizer_attributes = OPTIMIZER_ATTRIBUTES,
+)
+parameter_names = newunit_parameters(
+    reference.model;
+    keywords = PARAMETER_KEYWORDS,
+)
+objective = objective_function(reference.model)
+base_coefficients = [
+    coefficient(objective, variable_by_name(reference.model, parameter_name))
+    for parameter_name in parameter_names
+]</code></pre><h2 id="4.-Generate-Monte-Carlo-samples"><a class="docs-heading-anchor" href="#4.-Generate-Monte-Carlo-samples">4. Generate Monte Carlo samples</a><a id="4.-Generate-Monte-Carlo-samples-1"></a><a class="docs-heading-anchor-permalink" href="#4.-Generate-Monte-Carlo-samples" title="Permalink"></a></h2><p>MacroEnergyUQ expects parameters along the rows of <code>data</code> and samples along its columns. The code below draws an independent multiplier for every parameter-sample pair. With <code>VARIATION = 0.20</code>, each nominal coefficient is multiplied by a value uniformly distributed between 0.8 and 1.2.</p><p><code>MersenneTwister(SEED)</code> makes the generated study reproducible without changing Julia&#39;s global random-number generator.</p><pre><code class="language-julia hljs">rng = MersenneTwister(SEED)
+multipliers = 1 .+ VARIATION .* (
+    2 .* rand(rng, length(parameter_names), N_SAMPLES) .- 1
+)
+data = base_coefficients .* multipliers</code></pre><h2 id="5.-Arrange-samples-for-solution"><a class="docs-heading-anchor" href="#5.-Arrange-samples-for-solution">5. Arrange samples for solution</a><a id="5.-Arrange-samples-for-solution-1"></a><a class="docs-heading-anchor-permalink" href="#5.-Arrange-samples-for-solution" title="Permalink"></a></h2><p><a href="../../api/#MacroEnergyUQ.process_mc_data"><code>process_mc_data</code></a> places nearby samples next to one another. Because a cluster reuses the same model, this ordering can help consecutive solves.</p><p>It returns the reordered data, one cluster assignment per reordered sample, and <code>original_indices</code>, which records where each reordered sample appeared in the original data. Using one cluster keeps this tutorial sequential and avoids the optional RCall extension required for multi-cluster preprocessing.</p><p>The nominal coefficients are passed as <code>starting_point</code>, so the ordering starts near the unperturbed case.</p><pre><code class="language-julia hljs">processed_data, clusters, original_indices = process_mc_data(
+    data,
+    1;
+    starting_point = base_coefficients,
+)</code></pre><h2 id="6.-Define-the-extraction-function"><a class="docs-heading-anchor" href="#6.-Define-the-extraction-function">6. Define the extraction function</a><a id="6.-Define-the-extraction-function-1"></a><a class="docs-heading-anchor-permalink" href="#6.-Define-the-extraction-function" title="Permalink"></a></h2><p>MacroEnergyUQ calls <code>extract_summary</code> after each model solve. The function must return a numeric vector of the same length for every sample; those vectors become the rows of <code>results.outputs</code>.</p><p>Here, the first output is the optimized objective and the remaining outputs are the installed capacities associated with the uncertain investment costs. Since the factory returned context, the extractor must accept the <code>ctx</code> keyword. This example does not need it, but <code>ctx.case</code> and <code>ctx.index</code> are available for case-specific output processing.</p><pre><code class="language-julia hljs">function extract_summary(model; ctx)
+    capacities = [
+        value(variable_by_name(model, parameter_name))
+        for parameter_name in parameter_names
+    ]
+    return [objective_value(model); capacities]
+end</code></pre><h2 id="7.-Run-the-study"><a class="docs-heading-anchor" href="#7.-Run-the-study">7. Run the study</a><a id="7.-Run-the-study-1"></a><a class="docs-heading-anchor-permalink" href="#7.-Run-the-study" title="Permalink"></a></h2><p>For every column of <code>processed_data</code>, <a href="../../api/#MacroEnergyUQ.run_mc"><code>run_mc</code></a> replaces the objective coefficient of each variable in <code>parameter_names</code>, optimizes the model, invokes <code>extract_summary</code>, and records the termination status and solve time.</p><p><code>params_type = :objective</code> selects JuMP&#39;s objective-coefficient update path. The optimizer attributes and case path are not interpreted by MacroEnergyUQ; they are forwarded to <code>macroenergy_factory</code>.</p><pre><code class="language-julia hljs">results = run_mc(
+    macroenergy_factory,
+    processed_data,
+    parameter_names,
+    HiGHS.Optimizer;
+    params_type = :objective,
+    clusters,
+    extract = extract_summary,
+    optimizer_attributes = OPTIMIZER_ATTRIBUTES,
+    case_path = CASE_PATH,
+)</code></pre><h2 id="8.-Restore-the-generated-sample-order"><a class="docs-heading-anchor" href="#8.-Restore-the-generated-sample-order">8. Restore the generated sample order</a><a id="8.-Restore-the-generated-sample-order-1"></a><a class="docs-heading-anchor-permalink" href="#8.-Restore-the-generated-sample-order" title="Permalink"></a></h2><p>The rows returned by <code>run_mc</code> follow the reordered data. Applying <code>original_indices</code> restores outputs, statuses, and solve times to the order in which the samples were originally generated.</p><p>The first column of <code>outputs</code> is the objective. The remaining columns follow <code>parameter_names</code>, as recorded in <code>output_names</code>.</p><pre><code class="language-julia hljs">outputs = similar(results.outputs)
+statuses = similar(results.status)
+solve_times = similar(results.solve_time)
+outputs[original_indices, :] = results.outputs
+statuses[original_indices] = results.status
+solve_times[original_indices] = results.solve_time
+
+output_names = [&quot;objective&quot;; parameter_names]
+@info &quot;MacroEnergy uncertainty run complete&quot; N_SAMPLES parameter_names output_names statuses outputs</code></pre><h2 id="Run-the-complete-file"><a class="docs-heading-anchor" href="#Run-the-complete-file">Run the complete file</a><a id="Run-the-complete-file-1"></a><a class="docs-heading-anchor-permalink" href="#Run-the-complete-file" title="Permalink"></a></h2><p>Run the script directly from the MacroEnergyUQ repository. It activates and instantiates the bundled example environment itself:</p><pre><code class="language-bash hljs">julia examples/macroenergy_template.jl</code></pre><p>Set <code>MACROENERGY_UQ_SAMPLES</code> to override the default of 20 samples without editing the file. Internet access is required to check MacroEnergy&#39;s configured GitHub <code>main</code> branch. Installed package files and the downloaded case are cached locally.</p><p>For a Benders MacroEnergy run, use the component return format described in <a href="../../monte_carlo/#Benders-factories">Benders factories</a> instead of the monolithic <code>(model, context)</code> return.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../genx/">« GenX.jl template</a><a class="docs-footer-nextpage" href="../../api/">API reference »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Monday 7 September 2026 14:21">Monday 7 September 2026</span>. Using Julia version 1.12.7.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
