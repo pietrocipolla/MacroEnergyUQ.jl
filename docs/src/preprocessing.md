@@ -25,15 +25,17 @@ outputs_in_original_order[original_indices, :] = results.outputs
 
 ## Options
 
-- `n_threads` determines the number of returned clusters and cannot exceed the
-  number of samples.
+- `n_threads` determines the number of returned clusters.
 - `starting_point` is the reference vector for nearest-neighbour ordering. Its
   length must equal the number of parameters.
-- `sorting_algorithm = :nearest_neighbor` uses a fast greedy path.
+- `sorting_algorithm = :nearest_neighbor` uses a fast greedy solution to the 
+  shortest path problem by using nearest neighbors.
 - `sorting_algorithm = :tsp` solves a path optimization problem and requires a
-  supplied JuMP `optimizer`.
+  supplied JuMP `optimizer`. It is the actual solution to the shortest path problem
+  but it may be computationally expensive for large datasets.
 - `quantile_transform = true` first maps samples to a multivariate uniform
-  quantile space using optimal transport.
+  quantile space using optimal transport. It avoids the problem of having very
+  different, possibly correlated, parameter spaces.
 
 The single-cluster nearest-neighbour path works without RCall. Creating more
 than one cluster or enabling the quantile transform requires loading RCall so
