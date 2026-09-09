@@ -71,7 +71,7 @@ function process_mc_data(data::Matrix{Float64},
     end
 
     # Reorder points within each cluster
-    if sorting_algorithm != :none
+    if sorting_algorithm == :none
         original_indices = collect(1:n_cols)
     else
         data, original_indices = _reorder_within_clusters(data, 

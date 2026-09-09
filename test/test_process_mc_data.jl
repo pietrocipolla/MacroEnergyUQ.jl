@@ -39,6 +39,17 @@ using RCall
         params_small = [0.5, 0.5]
         processed_data_single, clusters_single = process_mc_data(data_small, 1; starting_point = params_small)
         @test all(clusters_single .== 1)
+
+        # Test that disabling sorting returns the input order unchanged
+        processed_data_none, clusters_none, indices_none = process_mc_data(
+            data_small,
+            1;
+            starting_point = params_small,
+            sorting_algorithm = :none,
+        )
+        @test processed_data_none == data_small
+        @test indices_none == collect(1:size(data_small, 2))
+        @test all(clusters_none .== 1)
     end
 
     @testset "Error handling" begin
